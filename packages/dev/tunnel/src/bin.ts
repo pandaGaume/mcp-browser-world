@@ -82,18 +82,27 @@ async function main(): Promise<void> {
     await tunnel.start();
 
     // ── Styled startup banner ──────────────────────────────────────────────
-    const hr = "─".repeat(56);
+    const hr = "─".repeat(64);
     const localhost = `http://localhost:${port}`;
     const hasWww = fs.existsSync(wwwDir);
+    const mcpSuffix = mcpPath.replace(/^\//, "");
+    const sseSuffix = ssePath.replace(/^\//, "");
 
     console.log();
-    console.log(`⚙️  MCP for Babylon — tunnel started`);
+    console.log(`⚙️  MCP for Babylon — multi-provider tunnel started`);
     console.log(hr);
-    console.log(`📡  Provider     ws://localhost:${port}${providerPath}`);
-    console.log(`🔌  MCP HTTP     ${localhost}${mcpPath}   ← MCP Inspector`);
-    console.log(`📺  MCP SSE      ${localhost}${ssePath}   ← Claude Code`);
+    console.log(`📡  Provider WebSocket   ws://localhost:${port}${providerPath}/<serverName>`);
+    console.log(`🔌  MCP Inspector (HTTP) ${localhost}/<serverName>/${mcpSuffix}`);
+    console.log(`📺  Claude Code   (SSE)  ${localhost}/<serverName>/${sseSuffix}`);
+    console.log();
+    console.log(`   Replace <serverName> with the name you pass to McpServerBuilder.withName()`);
+    console.log(`   Example: server name "babylon-scene"`);
+    console.log(`     Provider WS  →  ws://localhost:${port}${providerPath}/babylon-scene`);
+    console.log(`     MCP endpoint →  ${localhost}/babylon-scene/${mcpSuffix}`);
     if (hasWww) {
+        console.log();
         console.log(`🖥️   Dev harness  ${localhost}/`);
+        console.log(`   (The dev harness computes and shows the MCP endpoint automatically)`);
     }
     console.log(hr);
     console.log(`   Press Ctrl+C to stop.`);
