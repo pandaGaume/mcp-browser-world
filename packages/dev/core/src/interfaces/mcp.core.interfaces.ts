@@ -1,3 +1,5 @@
+import { JsonRpcRequest, JsonRpcResponse } from "./mcp.jsonrpc.interfaces";
+
 /**
  * Describes a parameterized URI pattern for resources exposed by an MCP server.
  * Returned by `resources/templates/list` so clients can discover what kinds of
@@ -227,4 +229,26 @@ export interface McpServerIdentity {
 export interface McpInitializeResult extends McpServerIdentity {
     /** The feature set this server supports, derived from registered behaviors. */
     capabilities: McpServerCapabilities;
+}
+
+/**
+ * Handles JSON-RPC protocol-level MCP requests, routing them to the domain layer.
+ *
+ * Each method maps to one MCP protocol method:
+ * - `initialize`              → `initialize`
+ * - `resourcesList`           → `resources/list`
+ * - `resourcesTemplatesList`  → `resources/templates/list`
+ * - `resourcesRead`           → `resources/read`
+ * - `toolsList`               → `tools/list`
+ * - `toolsCall`               → `tools/call`
+ *
+ * Aggregates results across all registered {@link IMcpBehavior}s and their instances.
+ */
+export interface IMcpServerHandlers {
+    initialize(req: JsonRpcRequest): JsonRpcResponse;
+    resourcesList(req: JsonRpcRequest): JsonRpcResponse;
+    resourcesTemplatesList(req: JsonRpcRequest): JsonRpcResponse;
+    resourcesRead(req: JsonRpcRequest): Promise<JsonRpcResponse>;
+    toolsList(req: JsonRpcRequest): JsonRpcResponse;
+    toolsCallAsync(req: JsonRpcRequest): Promise<JsonRpcResponse>;
 }

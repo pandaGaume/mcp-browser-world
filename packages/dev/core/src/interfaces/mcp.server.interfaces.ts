@@ -1,6 +1,5 @@
-import type { McpClientCapabilities, McpClientInfo, McpServerIdentity } from "./mcp.core.interfaces";
-import type { IMcpBehavior, IMcpBehaviorInstance } from "./mcp.behavior.interfaces";
-import type { JsonRpcRequest, JsonRpcResponse } from "./mcp.jsonrpc.interfaces";
+import type { IMcpServerHandlers, McpClientCapabilities, McpClientInfo, McpServerIdentity } from "./mcp.core.interfaces";
+import type { IMcpBehavior } from "./mcp.behavior.interfaces";
 
 /**
  * Handles the domain-level MCP initialization handshake.
@@ -30,28 +29,6 @@ export interface IMcpInitializer {
      *          by the server and must not be included here.
      */
     initialize(clientInfo: McpClientInfo, clientCapabilities: McpClientCapabilities): McpServerIdentity;
-}
-
-/**
- * Handles JSON-RPC protocol-level MCP requests, routing them to the domain layer.
- *
- * Each method maps to one MCP protocol method:
- * - `initialize`              → `initialize`
- * - `resourcesList`           → `resources/list`
- * - `resourcesTemplatesList`  → `resources/templates/list`
- * - `resourcesRead`           → `resources/read`
- * - `toolsList`               → `tools/list`
- * - `toolsCall`               → `tools/call`
- *
- * Aggregates results across all registered {@link IMcpBehavior}s and their instances.
- */
-export interface IMcpServerHandlers {
-    initialize(req: JsonRpcRequest): JsonRpcResponse;
-    resourcesList(req: JsonRpcRequest): JsonRpcResponse;
-    resourcesTemplatesList(req: JsonRpcRequest): JsonRpcResponse;
-    resourcesRead(req: JsonRpcRequest): Promise<JsonRpcResponse>;
-    toolsList(req: JsonRpcRequest): JsonRpcResponse;
-    toolsCall(req: JsonRpcRequest): Promise<JsonRpcResponse>;
 }
 
 /**
@@ -114,7 +91,7 @@ export interface IMcpServerBuilder {
     withWsUrl(url: string): IMcpServerBuilder;
     withName(name: string): IMcpServerBuilder;
     withInitializer(initializer: IMcpInitializer): IMcpServerBuilder;
-    withBehavior<T>(...behavior: IMcpBehavior<T>[]): IMcpServerBuilder;
+    register(...behavior: IMcpBehavior[]): IMcpServerBuilder;
     /**
      * Replaces the default JSON-RPC message routing with a custom implementation.
      * When omitted, {@link McpServer} handles routing itself.
@@ -147,32 +124,7 @@ export interface IMcpServer {
     /** Gracefully stops the server and closes all active connections. */
     stop(): Promise<void>;
 
-    /**
-     * Registers a behavior type with the server.
-     * Must be called before {@link attach} can be used with this behavior.
-     * Safe to call while the server is running.
-     *
-     * @param behavior - The behavior type to register.
-     */
-    registerBehavior<T>(behavior: IMcpBehavior<T>): void;
+    register(...behavior: IMcpBehavior[]): IMcpServer;
 
-    /**
-     * Attaches a specific object instance to a registered behavior,
-     * making it visible to the MCP client as a resource with tools.
-     * Safe to call while the server is running.
-     *
-     * @param target - The object to expose (e.g. a Babylon.js `Mesh` or `Light`).
-     * @param behavior - The registered behavior that knows how to wrap `target`.
-     * @returns The created {@link IMcpBehaviorInstance}, useful for later detaching.
-     */
-    attach<T>(target: T, behavior: IMcpBehavior<T>): IMcpBehaviorInstance | undefined;
-
-    /**
-     * Removes a previously attached instance from the server by its URI.
-     * The resource and its tools will no longer be visible to the client.
-     * Safe to call while the server is running.
-     *
-     * @param uri - The URI of the instance to remove (from {@link IMcpBehaviorInstance.uri}).
-     */
-    detach(uri: string): void;
+    unregister(...behavior: IMcpBehavior[]): IMcpServer;
 }

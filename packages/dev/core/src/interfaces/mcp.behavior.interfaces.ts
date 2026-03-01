@@ -1,96 +1,128 @@
-import type { McpResource, McpResourceContent, McpTool } from "./mcp.core.interfaces";
+import { McpResource, McpResourceContent, McpTool } from "./mcp.core.interfaces";
 
-export interface IMcpBehaviorOperations {
-    /** Returns the resource metadata (name, mimeType, description) for this instance. */
-    getResource(): McpResource | undefined;
+export interface McpToolResult {
+    content: McpToolResultContent[];
+    isError?: boolean;
+}
 
-    /** Returns the current state of this object serialized as resource content. */
-    readResourceAsync(): Promise<McpResourceContent | undefined>;
+export type McpToolResultContent =
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string } // base64
+    | { type: "resource"; resource: McpResourceContent }; // embedded resource
+
+/**
+ * Shared runtime contract for both behaviors and adapters.
+ *
+ * This interface represents operations that require a live object to execute —
+ * reading the current state of a resource, and executing a tool against it.
+ *
+ * Both {@link IMcpBehaviorAdapter} and {@link IMcpBehavior} extend this contract:
+ * - The adapter fulfills it at the BJS/data-source level (raw object access)
+ * - The behavior fulfills it at the MCP protocol level (delegates to its adapter)
+ *
+ * This shared base ensures the server can treat behaviors and adapters
+ * symmetrically when routing `resources/read` and `tools/call` requests.
+ */
+export interface IMcpRuntimeOperations {
+    /**
+     * Returns the current state of the resource identified by {@link uri},
+     * serialized as MCP-compatible content.
+     * Returns `undefined` if the URI is not handled by this instance.
+     */
+    readResourceAsync(uri: string): Promise<McpResourceContent | undefined>;
 
     /**
-     * Returns the tools exposed by this instance.
-     * Tool names must be prefixed with the behavior namespace,
-     * e.g. `"mesh.getPosition"`, `"mesh.setPosition"`.
+     * Executes a tool against the object identified by {@link uri}.
+     *
+     * @param toolName - Namespaced tool name e.g. `"light.dim"`
+     * @param uri      - Resource URI identifying the target object e.g. `"light://scene/sun"`
+     * @param args     - Tool arguments as defined in the tool's `inputSchema`
+     */
+    executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult>;
+}
+
+/**
+ * Operations knowable at design time — pure schema, no live object required.
+ */
+export interface IMcpDesignOperations {
+    /**
+     * The behavior's own resource identity — who it is in the MCP resource list.
+     * This is static metadata describing the behavior category itself,
+     * NOT an enumeration of backed objects.
+     *
+     * @example LightBehavior returns:
+     * { uri: "light://scene", name: "Scene Lights", mimeType: "application/json" }
+     */
+    getResources(): McpResource[];
+
+    /**
+     * RFC 6570 URI templates advertised via `resources/templates/list`.
+     * @example `["light://scene/{lightName}"]`
+     */
+    getResourceTemplates(): string[];
+
+    /**
+     * Tool schemas — static definitions, execution handled at runtime.
      */
     getTools(): McpTool[];
-
-    /**
-     * Executes a namespaced tool on this instance.
-     *
-     * @param name - Full namespaced tool name (e.g. `"mesh.setPosition"`).
-     * @param args - Tool arguments as described by the tool's `inputSchema`.
-     * @returns The tool's result payload.
-     */
-    callTool(name: string, args: unknown): Promise<unknown>;
 }
 
 /**
- * Represents a single object instance registered with the MCP server.
- *
- * An instance is the live, per-object counterpart of an {@link IMcpBehavior}.
- * It simultaneously acts as:
- * - a **resource** — the object's current state, readable via `resources/read`
- * - a **tool executor** — operations the client can invoke on this specific object
- *
- * Created by {@link IMcpBehavior.attach} and managed by {@link IMcpServer}.
+ * Adapter — only layer touching BJS/data source directly.
+ * Purely runtime — no identity, no schema.
  */
-export interface IMcpBehaviorInstance<T = unknown> extends IMcpBehaviorOperations {
-    /**
-     * URI uniquely identifying this instance within the MCP server.
-     * Used as the resource identifier and as the routing key for tool calls.
-     *
-     * Convention: `babylon://<namespace>/<objectName>`
-     * e.g. `babylon://mesh/heroMesh`, `babylon://light/sunLight`
-     */
-    readonly uri: string;
-    /**
-     * The original object this instance represents.
-     */
-    target: T;
-}
-
-export interface IUriFactory {
-    createUri(behavior: IMcpBehavior, target: unknown): string;
-}
-
-export interface IMcpBehaviorInstanceFactory<T> {
-    createMcpBehaviorInstance(behavior: IMcpBehavior, target: T, uri: string): IMcpBehaviorInstance<T> | undefined;
-}
+export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {}
 
 /**
- * Describes a category of object behavior that can be attached to instances.
+ * Adapter between an {@link IMcpBehavior} and its underlying data source.
  *
- * A behavior is the reusable "capability template" for a specific type of object
- * (e.g. `MeshBehavior`, `LightBehavior`, `CameraBehavior`). It knows how to wrap
- * any instance of `T` into an {@link IMcpBehaviorInstance} that exposes that
- * object's state and operations to the MCP client.
+ * The adapter is the only layer that has direct knowledge of BJS objects
+ * (or any other data source — repository, remote API, etc.).
+ * It resolves URIs to concrete objects and performs reads and mutations on them.
  *
- * Multiple instances of the same behavior type can be attached to different objects.
- * Each call to {@link attach} produces an independent {@link IMcpBehaviorInstance}.
+ * An adapter may back a single object or an entire collection:
+ * - `BabylonSingleLightAdapter`  — wraps one `BABYLON.Light`
+ * - `BabylonSceneLightsAdapter`  — wraps `scene.lights[]`
  *
- * @template T The type of object this behavior operates on (e.g. `Mesh`, `Light`).
+ * The behavior never touches the data source directly — it always delegates
+ * through its adapter, keeping MCP protocol logic fully decoupled from BJS.
+ */
+export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {}
+
+/**
+ * Defines the MCP identity, schema, and protocol shape for a category of objects.
+ *
+ * A behavior is the MCP-facing description of "what something is and what you can do with it".
+ * It owns:
+ * - The namespace and URI template (identity)
+ * - The tool schemas (capabilities)
+ * - Runtime delegation to its adapter (data + mutations)
+ *
+ * A behavior is decoupled from any specific object instance — it may represent
+ * a single light, all lights in a scene, or lights from a remote repository.
+ * That cardinality is entirely determined by the injected {@link IMcpBehaviorAdapter}.
+ *
+ * Lifecycle:
+ * - Registered at design time via {@link IMcpServerBuilder.withBehavior}
+ * - Or registered at runtime via {@link IMcpServer.addBehavior}
  *
  * @example
  * ```typescript
- * class MeshBehavior implements IMcpBehavior<Mesh> {
- *     readonly namespace = "mesh";
- *
- *     attach(target: Mesh): IMcpBehaviorInstance {
- *         return new MeshBehaviorInstance(target);
- *     }
- * }
- *
- * // Register the behavior type, then attach specific objects:
- * server.registerBehavior(new MeshBehavior());
- * server.attach(heroMesh, meshBehavior);
- * server.attach(groundMesh, meshBehavior);
+ * const behavior = McpBehaviorBuilder.create("light")
+ *     .withName("Scene Light")
+ *     .withUriTemplate("light://scene/{lightName}")
+ *     .withDescription("Controls lights in the Babylon.js scene")
+ *     .withMimeType("application/json")
+ *     .withTools([dimTool, setColorTool, setEnabledTool])
+ *     .withAdapter(new BabylonSceneLightsAdapter(scene))
+ *     .build()
  * ```
  */
-export interface IMcpBehavior<T = unknown> {
+export interface IMcpBehavior extends IMcpRuntimeOperations, IMcpDesignOperations {
     /**
      * Unique namespace for this behavior's tools.
      * Prefixed to all tool names to avoid collisions across behaviors.
-     * e.g. `"mesh"` → tools named `"mesh.getPosition"`, `"mesh.setPosition"`.
+     * e.g. `"light"` → tools named `"light.dim"`, `"light.setColor"`.
      *
      * Must be lowercase, alphanumeric, no spaces.
      */
@@ -102,25 +134,70 @@ export interface IMcpBehavior<T = unknown> {
     /**
      * RFC 6570 URI template describing the resource URIs produced by this behavior.
      * Advertised via `resources/templates/list` so clients can discover the URI
-     * scheme and construct valid identifiers without enumerating every instance.
+     * scheme without enumerating every instance.
      *
-     * @example `"mesh://scene/{meshName}"`
+     * @example `"light://scene/{lightName}"`
      * @example `"camera://scene/{cameraName}"`
      */
     readonly uriTemplate?: string;
 
-    /** Optional description of what instances of this behavior represent. */
+    /** Human-readable description of what instances of this behavior represent. */
     readonly description?: string;
 
     /** MIME type of content returned by `resources/read` for instances of this behavior. */
     readonly mimeType?: string;
+}
+
+// ── Builder ───────────────────────────────────────────────────────────────────
+
+/**
+ * Fluent builder for constructing an {@link IMcpBehavior}.
+ *
+ * Separates the concerns of behavior definition (namespace, tools, URI template)
+ * from adapter wiring (data source, mutations), making each independently
+ * composable and testable.
+ *
+ * The adapter is injected last via {@link withAdapter} — this means the same
+ * behavior definition can be reused with different adapters:
+ *
+ * @example Single light
+ * ```typescript
+ * const behavior = McpBehaviorBuilder.create("light")
+ *     .withTools(lightTools)
+ *     .withAdapter(new BabylonSingleLightAdapter(sunLight))
+ *     .build()
+ * ```
+ *
+ * @example Entire scene
+ * ```typescript
+ * const behavior = McpBehaviorBuilder.create("light")
+ *     .withTools(lightTools)
+ *     .withAdapter(new BabylonSceneLightsAdapter(scene))
+ *     .build()
+ * ```
+ */
+export interface IMcpBehaviorBuilder {
+    withName(name: string): IMcpBehaviorBuilder;
+    withUriTemplate(template: string): IMcpBehaviorBuilder;
+    withDescription(description: string): IMcpBehaviorBuilder;
+    withMimeType(mimeType: string): IMcpBehaviorBuilder;
 
     /**
-     * Wraps a specific object in an {@link IMcpBehaviorInstance}, making it
-     * visible to the MCP client as a resource with callable tools.
-     *
-     * @param target - The object to attach this behavior to.
-     * @returns A new instance representing `target` in the MCP server.
+     * Registers the tool schemas exposed by this behavior.
+     * Tool names must be prefixed with the namespace passed to {@link McpBehaviorBuilder.create}.
      */
-    attach(target: T): IMcpBehaviorInstance<T> | undefined;
+    withTools(tools: McpTool[]): IMcpBehaviorBuilder;
+
+    /**
+     * Injects the adapter that backs this behavior.
+     * The adapter is the only component with direct access to the underlying
+     * data source (BJS objects, repository, remote API, etc.).
+     */
+    withAdapter(adapter: IMcpBehaviorAdapter): IMcpBehaviorBuilder;
+
+    /**
+     * Finalizes and returns the configured {@link IMcpBehavior}.
+     * @throws if `namespace` or `adapter` have not been provided.
+     */
+    build(): IMcpBehavior;
 }
