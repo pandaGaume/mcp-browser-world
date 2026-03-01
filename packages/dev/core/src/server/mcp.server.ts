@@ -1,4 +1,4 @@
-import type { IMcpBehavior, IMcpBehaviorInstance, IMcpInitializer, IMcpServer, IMcpServerHandlers, IMcpServerOptions } from "../interfaces";
+import type { IMcpBehavior, IMcpBehaviorInstance, IMcpInitializer, IMcpServer, IMcpServerHandlers, IMcpServerOptions, McpResource } from "../interfaces";
 import type {
     JsonRpcNotification,
     JsonRpcRequest,
@@ -137,10 +137,12 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * @returns The created instance, whose {@link IMcpBehaviorInstance.uri} can be
      *          passed to {@link detach} to remove it later.
      */
-    attach<T>(target: T, behavior: IMcpBehavior<T>): IMcpBehaviorInstance {
+    attach<T>(target: T, behavior: IMcpBehavior<T>): IMcpBehaviorInstance | undefined {
         const instance = behavior.attach(target);
-        this._instances.set(instance.uri, instance);
-        this._notifyResourcesListChanged();
+        if (instance) {
+            this._instances.set(instance.uri, instance);
+            this._notifyResourcesListChanged();
+        }
         return instance;
     }
 
@@ -185,10 +187,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         for (const behavior of this._behaviors.values()) {
             if (behavior.uriTemplate) {
                 templates.push({
-                    uriTemplate:  behavior.uriTemplate,
-                    name:         behavior.name        ?? behavior.namespace,
-                    description:  behavior.description,
-                    mimeType:     behavior.mimeType,
+                    uriTemplate: behavior.uriTemplate,
+                    name: behavior.name ?? behavior.namespace,
+                    description: behavior.description,
+                    mimeType: behavior.mimeType,
                 });
             }
         }
@@ -200,7 +202,9 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Returns the union of all live {@link IMcpBehaviorInstance} resources.
      */
     resourcesList(req: JsonRpcRequest): JsonRpcResponse {
-        const resources = Array.from(this._instances.values()).map((i) => i.getResource());
+        const resources = Array.from(this._instances.values())
+            .map((i) => i.getResource())
+            .filter((r): r is McpResource => r !== undefined);
         return Mcp.resourcesListResult(req.id, resources);
     }
 
@@ -216,8 +220,10 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         if (!uri) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
         const instance = this._instances.get(uri);
         if (!instance) return Mcp.resourceNotFound(req.id, uri);
+        const r = await instance.readResourceAsync();
+        if (!r) return Mcp.resourceNotFound(req.id, uri);
 
-        return Mcp.resourcesReadResult(req.id, await instance.readResource());
+        return Mcp.resourcesReadResult(req.id, r);
     }
 
     /**

@@ -165,7 +165,7 @@ export interface IMcpServer {
      * @param behavior - The registered behavior that knows how to wrap `target`.
      * @returns The created {@link IMcpBehaviorInstance}, useful for later detaching.
      */
-    attach<T>(target: T, behavior: IMcpBehavior<T>): IMcpBehaviorInstance;
+    attach<T>(target: T, behavior: IMcpBehavior<T>): IMcpBehaviorInstance | undefined;
 
     /**
      * Removes a previously attached instance from the server by its URI.

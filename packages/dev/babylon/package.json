@@ -1,0 +1,32 @@
+{
+    "name": "@dev/babylon",
+    "version": "0.1.0",
+    "main": "dist/index",
+    "module": "dist/index",
+    "esnext": "dist/index",
+    "types": "dist/index",
+    "private": true,
+    "files": [
+        "dist",
+        "src"
+    ],
+    "scripts": {
+        "build": "npm run clean && npm run compile",
+        "clean": "rimraf dist bundle && rimraf tsconfig.build.tsbuildinfo",
+        "lint": "npm run lint:check",
+        "lint:check": "eslint \"src/**/*.{ts,tsx}\"",
+        "lint:fix": "eslint \"src/**/*.{ts,tsx}\" --fix",
+        "compile": "npm run compile:source",
+        "compile:source": "tsc -b tsconfig.build.json",
+        "watch:source": "tsc -b tsconfig.build.json -w",
+        "bundle": "webpack --mode production",
+        "bundle:dev": "webpack --mode development",
+        "bundle:watch": "webpack --mode development --watch"
+    },
+    "devDependencies": {
+        "ts-loader": "^9.5.0",
+        "webpack": "^5.98.0",
+        "webpack-cli": "^5.1.0",
+        "@babylonjs/core": "^8.0.0"
+    }
+}

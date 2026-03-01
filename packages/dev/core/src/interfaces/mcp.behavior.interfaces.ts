@@ -1,30 +1,11 @@
 import type { McpResource, McpResourceContent, McpTool } from "./mcp.core.interfaces";
 
-/**
- * Represents a single object instance registered with the MCP server.
- *
- * An instance is the live, per-object counterpart of an {@link IMcpBehavior}.
- * It simultaneously acts as:
- * - a **resource** — the object's current state, readable via `resources/read`
- * - a **tool executor** — operations the client can invoke on this specific object
- *
- * Created by {@link IMcpBehavior.attach} and managed by {@link IMcpServer}.
- */
-export interface IMcpBehaviorInstance {
-    /**
-     * URI uniquely identifying this instance within the MCP server.
-     * Used as the resource identifier and as the routing key for tool calls.
-     *
-     * Convention: `babylon://<namespace>/<objectName>`
-     * e.g. `babylon://mesh/heroMesh`, `babylon://light/sunLight`
-     */
-    readonly uri: string;
-
+export interface IMcpBehaviorOperations {
     /** Returns the resource metadata (name, mimeType, description) for this instance. */
-    getResource(): McpResource;
+    getResource(): McpResource | undefined;
 
     /** Returns the current state of this object serialized as resource content. */
-    readResource(): Promise<McpResourceContent>;
+    readResourceAsync(): Promise<McpResourceContent | undefined>;
 
     /**
      * Returns the tools exposed by this instance.
@@ -41,6 +22,39 @@ export interface IMcpBehaviorInstance {
      * @returns The tool's result payload.
      */
     callTool(name: string, args: unknown): Promise<unknown>;
+}
+
+/**
+ * Represents a single object instance registered with the MCP server.
+ *
+ * An instance is the live, per-object counterpart of an {@link IMcpBehavior}.
+ * It simultaneously acts as:
+ * - a **resource** — the object's current state, readable via `resources/read`
+ * - a **tool executor** — operations the client can invoke on this specific object
+ *
+ * Created by {@link IMcpBehavior.attach} and managed by {@link IMcpServer}.
+ */
+export interface IMcpBehaviorInstance<T = unknown> extends IMcpBehaviorOperations {
+    /**
+     * URI uniquely identifying this instance within the MCP server.
+     * Used as the resource identifier and as the routing key for tool calls.
+     *
+     * Convention: `babylon://<namespace>/<objectName>`
+     * e.g. `babylon://mesh/heroMesh`, `babylon://light/sunLight`
+     */
+    readonly uri: string;
+    /**
+     * The original object this instance represents.
+     */
+    target: T;
+}
+
+export interface IUriFactory {
+    createUri(behavior: IMcpBehavior, target: unknown): string;
+}
+
+export interface IMcpBehaviorInstanceFactory<T> {
+    createMcpBehaviorInstance(behavior: IMcpBehavior, target: T, uri: string): IMcpBehaviorInstance<T> | undefined;
 }
 
 /**
@@ -82,6 +96,9 @@ export interface IMcpBehavior<T = unknown> {
      */
     readonly namespace: string;
 
+    /** Human-readable name for this behavior category, used in template listings. */
+    readonly name?: string;
+
     /**
      * RFC 6570 URI template describing the resource URIs produced by this behavior.
      * Advertised via `resources/templates/list` so clients can discover the URI
@@ -91,9 +108,6 @@ export interface IMcpBehavior<T = unknown> {
      * @example `"camera://scene/{cameraName}"`
      */
     readonly uriTemplate?: string;
-
-    /** Human-readable name for this behavior category, used in template listings. */
-    readonly name?: string;
 
     /** Optional description of what instances of this behavior represent. */
     readonly description?: string;
@@ -108,5 +122,5 @@ export interface IMcpBehavior<T = unknown> {
      * @param target - The object to attach this behavior to.
      * @returns A new instance representing `target` in the MCP server.
      */
-    attach(target: T): IMcpBehaviorInstance;
+    attach(target: T): IMcpBehaviorInstance<T> | undefined;
 }
