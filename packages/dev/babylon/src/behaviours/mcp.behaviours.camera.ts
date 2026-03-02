@@ -4,10 +4,12 @@ import { McpCameraNamespace } from "../mcp.commons";
 export class McpCameraBehavior extends McpBehavior {
     public static CameraSetTargetFn = "camera.setTarget";
 
-    public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions) {
-        options.domain = options.domain || adapter.domain;
-        options.namespace = options.namespace || McpCameraNamespace;
-        super(adapter, options);
+    public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions = {}) {
+        super(adapter, {
+            ...options,
+            domain: options.domain ?? adapter.domain,
+            namespace: options.namespace ?? McpCameraNamespace,
+        });
     }
 
     protected override _buildTools(): McpTool[] {
