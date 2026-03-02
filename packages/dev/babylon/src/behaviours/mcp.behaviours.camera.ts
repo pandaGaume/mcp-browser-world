@@ -1,0 +1,62 @@
+import { IMcpBehaviorAdapter, JsonRpcMimeType, McpBehavior, McpBehaviorOptions, McpResource, McpResourceTemplate, McpTool } from "@dev/core";
+import { McpCameraNamespace } from "../mcp.commons";
+
+export class McpCameraBehavior extends McpBehavior {
+    public static CameraSetTargetFn = "camera.setTarget";
+
+    public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions) {
+        options.domain = options.domain || adapter.domain;
+        options.namespace = options.namespace || McpCameraNamespace;
+        super(adapter, options);
+    }
+
+    protected override _buildTools(): McpTool[] {
+        return [
+            {
+                name: McpCameraBehavior.CameraSetTargetFn,
+                description: "Sets the camera look-at point (world space) by calling TargetCamera.setTarget(Vector3).",
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        uri: { type: "string", description: "Camera URI e.g. camera://scene/MyCamera" },
+                        target: {
+                            type: "object",
+                            description: "World-space point to look at. WebGL right-handed system, y-axis up.",
+                            properties: {
+                                x: { type: "number" },
+                                y: { type: "number" },
+                                z: { type: "number" },
+                            },
+                            required: ["x", "y", "z"],
+                            additionalProperties: false,
+                        },
+                    },
+                    required: ["uri", "target"],
+                    additionalProperties: false,
+                },
+            },
+        ];
+    }
+
+    protected override _buildResources(): McpResource[] {
+        return [
+            {
+                uri: `${this.baseUri}`,
+                name: "Cameras list.",
+                description: "Cameras available in the scene (paged).",
+                mimeType: JsonRpcMimeType,
+            },
+        ];
+    }
+
+    protected override _buildTemplate(): McpResourceTemplate[] {
+        return [
+            {
+                uriTemplate: `${this.baseUri}/{cameraId}`,
+                name: "Scene camera",
+                description: "A single camera in a scene.",
+                mimeType: JsonRpcMimeType,
+            },
+        ];
+    }
+}

@@ -51,6 +51,20 @@ function makeBundle(name, entry, out, mode) {
             // web workers without relying on `window` or `global`.
             globalObject: "globalThis",
         },
+        externals: [
+            ({ request }, callback) => {
+                if (request.match("^@babylonjs/core")) {
+                    return callback(null, "BABYLON");
+                }
+                callback();
+            },
+            ({ request }, callback) => {
+                if (request.match("^@dev/core")) {
+                    return callback(null, "McpCore");
+                }
+                callback();
+            },
+        ],
         module: { rules: [tsRule] },
         resolve,
     };
@@ -72,6 +86,6 @@ module.exports = (_env, argv) => {
         // mcp-core  — interfaces / type contracts only.
         // Consumer: any Babylon.js scene that needs the shared MCP types.
         // ------------------------------------------------------------------
-        makeBundle("McpBabylon", "src/interfaces/index.ts", "mcp-babylon.js", mode),
+        makeBundle("McpBabylon", "src/index.ts", "mcp-babylon.js", mode),
     ];
 };

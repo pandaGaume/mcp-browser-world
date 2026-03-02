@@ -1,4 +1,5 @@
-import { McpResource, McpResourceContent, McpTool } from "./mcp.core.interfaces";
+import { IEventSource } from "./eventSource";
+import { McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
 
 export interface McpToolResult {
     content: McpToolResultContent[];
@@ -59,7 +60,7 @@ export interface IMcpDesignOperations {
      * RFC 6570 URI templates advertised via `resources/templates/list`.
      * @example `["light://scene/{lightName}"]`
      */
-    getResourceTemplates(): string[];
+    getResourceTemplates(): McpResourceTemplate[];
 
     /**
      * Tool schemas — static definitions, execution handled at runtime.
@@ -71,7 +72,11 @@ export interface IMcpDesignOperations {
  * Adapter — only layer touching BJS/data source directly.
  * Purely runtime — no identity, no schema.
  */
-export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {}
+export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
+    onResourceContentChanged: IEventSource<string>;
+    onResourcesChanged: IEventSource<void>;
+    domain: string;
+}
 
 /**
  * Adapter between an {@link IMcpBehavior} and its underlying data source.

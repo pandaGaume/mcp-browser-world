@@ -65,31 +65,19 @@ function makeBundle(name, entry, out, mode) {
  * @returns {import("webpack").Configuration[]}
  */
 module.exports = (_env, argv) => {
-    const mode = /** @type {"production"|"development"} */ (
-        argv.mode === "development" ? "development" : "production"
-    );
+    const mode = /** @type {"production"|"development"} */ (argv.mode === "development" ? "development" : "production");
 
     return [
         // ------------------------------------------------------------------
         // mcp-core  — interfaces / type contracts only.
-        // Consumer: any Babylon.js scene that needs the shared MCP types.
+        // Consumer: any consumer that needs the shared MCP types.
         // ------------------------------------------------------------------
-        makeBundle(
-            "McpCore",
-            "src/interfaces/index.ts",
-            "mcp-core.js",
-            mode,
-        ),
+        makeBundle("McpCore", "src/interfaces/index.ts", "mcp-core.js", mode),
 
         // ------------------------------------------------------------------
         // mcp-server  — full McpServer implementation + helpers.
-        // Consumer: the Babylon.js scene that acts as an MCP provider.
+        // Consumer: the code that acts as an MCP provider.
         // ------------------------------------------------------------------
-        makeBundle(
-            "McpServer",
-            "src/index.ts",
-            "mcp-server.js",
-            mode,
-        ),
+        makeBundle("McpServer", "src/index.ts", "mcp-server.js", mode),
     ];
 };
