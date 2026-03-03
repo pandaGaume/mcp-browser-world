@@ -83,39 +83,31 @@ export class McpCameraAdapter extends McpAdapterBase {
     public async executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult> {
         const camera = this._indexedCameras.get(uri);
         if (!camera) {
-            return McpToolResults.error(
-                `No camera found for URI "${uri}". ` +
-                `Read the resource "${McpCameraResourceUriPrefix}" to get the list of available camera URIs.`
-            );
+            return McpToolResults.error(`No camera found for URI "${uri}". ` + `Read the resource "${McpCameraResourceUriPrefix}" to get the list of available camera URIs.`);
         }
         switch (toolName) {
             case McpCameraBehavior.CameraSetTargetFn: {
                 if (!(camera instanceof TargetCamera)) {
                     return McpToolResults.error(
                         `Camera "${camera.name}" (type: ${camera.getClassName()}) does not support "setTarget". ` +
-                        `Only TargetCamera subclasses (FreeCamera, ArcRotateCamera, etc.) expose a look-at point.`
+                            `Only TargetCamera subclasses (FreeCamera, ArcRotateCamera, etc.) expose a look-at point.`
                     );
                 }
                 const target = args["target"] as { x: number; y: number; z: number } | undefined;
                 if (!target || typeof target.x !== "number" || typeof target.y !== "number" || typeof target.z !== "number") {
                     return McpToolResults.error(
                         `Invalid "target" argument for "${toolName}". ` +
-                        `Expected an object with numeric fields x, y, z in world space (right-handed y-up). ` +
-                        `Received: ${JSON.stringify(args["target"])}`
+                            `Expected an object with numeric fields x, y, z in world space (right-handed y-up). ` +
+                            `Received: ${JSON.stringify(args["target"])}`
                     );
                 }
                 // Input is right-handed y-up; flip Z to BJS left-handed when needed.
                 const z = this._scene.useRightHandedSystem ? target.z : -target.z;
                 camera.setTarget(new Vector3(target.x, target.y, z));
-                return McpToolResults.text(
-                    `Camera "${camera.name}" is now looking at (${target.x}, ${target.y}, ${target.z}) in world space.`
-                );
+                return McpToolResults.text(`Camera "${camera.name}" is now looking at (${target.x}, ${target.y}, ${target.z}) in world space.`);
             }
             default: {
-                return McpToolResults.error(
-                    `Unknown tool "${toolName}" for camera adapter. ` +
-                    `Available tools: "${McpCameraBehavior.CameraSetTargetFn}".`
-                );
+                return McpToolResults.error(`Unknown tool "${toolName}" for camera adapter. ` + `Available tools: "${McpCameraBehavior.CameraSetTargetFn}".`);
             }
         }
     }
