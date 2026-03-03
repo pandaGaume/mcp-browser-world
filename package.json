@@ -29,16 +29,19 @@
     "packages/**/*"
   ],
   "scripts": {
-    "build:dev": "tsc",
-    "build:watch": "tsc --watch",
+    "build:dev": "tsc -b",
+    "build:watch": "tsc -b --watch",
     "lint": "npm run lint:check",
     "lint:check": "eslint \"packages/**/src/**/*.{ts,tsx,js,json}\" --quiet",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "npm run format:check && npm run format:fix",
     "format:check": "prettier --check \"packages/**/src/**/*.{ts,tsx,js,json,scss,css}\"",
-    "bundle": "npm run bundle --workspace=@dev/core",
-    "bundle:dev": "npm run bundle:dev --workspace=@dev/core",
+    "bundle": "npm run bundle --workspace=@dev/core && npm run bundle --workspace=@dev/babylon",
+    "bundle:dev": "npm run bundle:dev --workspace=@dev/core && npm run bundle:dev --workspace=@dev/babylon",
     "bundle:watch": "npm run bundle:watch --workspace=@dev/core",
+    "deploy:bundles": "node scripts/deploy-bundles.mjs",
+    "build:all": "npm run build:dev && npm run bundle && npm run deploy:bundles",
+    "build:all:dev": "npm run build:dev && npm run bundle:dev && npm run deploy:bundles",
     "server:build": "npm run build --workspace=@dev/tunnel",
     "server:start": "npm run server:build && npm run start --workspace=@dev/tunnel"
   },

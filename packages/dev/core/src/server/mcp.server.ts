@@ -1,4 +1,4 @@
-import type { IMcpBehavior, IMcpBehaviorInstance, IMcpInitializer, IMcpServer, IMcpServerHandlers, IMcpServerOptions, McpResource } from "../interfaces";
+import type { IMcpBehavior, IMcpInitializer, IMcpRuntimeOperations, IMcpServer, IMcpServerHandlers, IMcpServerOptions } from "../interfaces";
 import type {
     JsonRpcNotification,
     JsonRpcRequest,
@@ -57,10 +57,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _idleTimer: ReturnType<typeof setTimeout> | null = null;
 
     /** Registered behavior types, keyed by namespace. */
-    private readonly _behaviors = new Map<string, IMcpBehavior<unknown>>();
-
-    /** Live object instances, keyed by URI. */
-    private readonly _instances = new Map<string, IMcpBehaviorInstance>();
+    private readonly _behaviors = new Map<string, IMcpBehavior>();
+    private readonly _resourceIndex = new Map<string, IMcpRuntimeOperations>();
 
     constructor(name: string, wsUrl: string, options: IMcpServerOptions, initializer?: IMcpInitializer, handlers?: IMcpServerHandlers) {
         this._name = name;
@@ -119,41 +117,30 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     // IMcpServer — behavior & instance management
     // -------------------------------------------------------------------------
 
-    /**
-     * Registers a behavior type with the server so that instances of that type
-     * can be attached via {@link attach}.
-     * Also contributes to the capabilities advertised during `initialize`.
-     */
-    registerBehavior<T>(behavior: IMcpBehavior<T>): void {
-        this._behaviors.set(behavior.namespace, behavior as IMcpBehavior<unknown>);
-    }
-
-    /**
-     * Wraps `target` with the given behavior and registers the resulting instance
-     * as a live MCP resource with callable tools.
-     * Safe to call while the server is running; the client will see the new resource
-     * on its next `resources/list` or `tools/list` call.
-     *
-     * @returns The created instance, whose {@link IMcpBehaviorInstance.uri} can be
-     *          passed to {@link detach} to remove it later.
-     */
-    attach<T>(target: T, behavior: IMcpBehavior<T>): IMcpBehaviorInstance | undefined {
-        const instance = behavior.attach(target);
-        if (instance) {
-            this._instances.set(instance.uri, instance);
+    register(...behavior: IMcpBehavior[]): IMcpServer {
+        if (behavior.length !== 0) {
+            for (const b of behavior) {
+                this._behaviors.set(b.namespace, b);
+                for (const r of b.getResources()) {
+                    this._resourceIndex.set(r.uri, b);
+                }
+            }
             this._notifyResourcesListChanged();
         }
-        return instance;
+        return this;
     }
 
-    /**
-     * Removes a previously attached instance by URI.
-     * The resource and its tools disappear from subsequent `resources/list` and
-     * `tools/list` responses.
-     */
-    detach(uri: string): void {
-        this._instances.delete(uri);
-        this._notifyResourcesListChanged();
+    unregister(...behavior: IMcpBehavior[]): IMcpServer {
+        if (behavior.length !== 0) {
+            for (const b of behavior) {
+                this._behaviors.delete(b.namespace);
+                for (const r of b.getResources()) {
+                    this._resourceIndex.delete(r.uri);
+                }
+            }
+            this._notifyResourcesListChanged();
+        }
+        return this;
     }
 
     // -------------------------------------------------------------------------
@@ -185,14 +172,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     resourcesTemplatesList(req: JsonRpcRequest): JsonRpcResponse {
         const templates: McpResourceTemplate[] = [];
         for (const behavior of this._behaviors.values()) {
-            if (behavior.uriTemplate) {
-                templates.push({
-                    uriTemplate: behavior.uriTemplate,
-                    name: behavior.name ?? behavior.namespace,
-                    description: behavior.description,
-                    mimeType: behavior.mimeType,
-                });
-            }
+            templates.push(...behavior.getResourceTemplates());
         }
         return Mcp.resourcesTemplatesListResult(req.id, templates);
     }
@@ -202,25 +182,28 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Returns the union of all live {@link IMcpBehaviorInstance} resources.
      */
     resourcesList(req: JsonRpcRequest): JsonRpcResponse {
-        const resources = Array.from(this._instances.values())
-            .map((i) => i.getResource())
-            .filter((r): r is McpResource => r !== undefined);
+        const resources = Array.from(this._behaviors.values()).flatMap((i) => i.getResources());
         return Mcp.resourcesListResult(req.id, resources);
     }
 
     /**
      * Handles `resources/read`.
-     * Looks up the instance by URI and returns its current state.
-     * Returns a `-32002` error if the URI is not found.
+     *
+     * Resolution order:
+     * 1. Exact match in `_resourceIndex` (static resource URIs, O(1)).
+     * 2. Template match: scan each behavior's URI templates and test the
+     *    requested URI against each `{variable}` pattern (RFC 6570 subset).
+     *
+     * Returns a `-32002` error if neither lookup finds a handler.
      */
     async resourcesRead(req: JsonRpcRequest): Promise<JsonRpcResponse> {
         const params = req.params as { uri?: string } | undefined;
         const uri = params?.uri;
 
         if (!uri) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
-        const instance = this._instances.get(uri);
+        const instance = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
         if (!instance) return Mcp.resourceNotFound(req.id, uri);
-        const r = await instance.readResourceAsync();
+        const r = await instance.readResourceAsync(uri);
         if (!r) return Mcp.resourceNotFound(req.id, uri);
 
         return Mcp.resourcesReadResult(req.id, r);
@@ -233,15 +216,11 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * The target instance is identified at call time via the `uri` argument.
      */
     toolsList(req: JsonRpcRequest): JsonRpcResponse {
-        const seen = new Set<string>();
         const tools: McpTool[] = [];
 
-        for (const instance of this._instances.values()) {
-            for (const tool of instance.getTools()) {
-                if (!seen.has(tool.name)) {
-                    seen.add(tool.name);
-                    tools.push(tool);
-                }
+        for (const behavior of this._behaviors.values()) {
+            for (const tool of behavior.getTools()) {
+                tools.push(tool);
             }
         }
 
@@ -257,29 +236,19 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * 2. Otherwise, scan all instances for the first one that declares the tool (fallback
      *    for single-instance scenarios where a URI is not needed).
      */
-    async toolsCall(req: JsonRpcRequest): Promise<JsonRpcResponse> {
+    async toolsCallAsync(req: JsonRpcRequest): Promise<JsonRpcResponse> {
         const params = req.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
-        const name = params?.name;
-        const args = params?.arguments ?? {};
 
+        const name = params?.name;
         if (!name) return Mcp.invalidParams(req.id, "Missing required parameter: name");
 
-        // Fast path: route by instance URI when the caller provides it.
+        const args = params?.arguments ?? {};
         const uri = args["uri"] as string | undefined;
-        if (uri) {
-            const instance = this._instances.get(uri);
-            if (!instance) return Mcp.instanceNotFound(req.id, uri);
-            return this._callTool(req, instance, name, args);
-        }
+        if (!uri) return Mcp.invalidParams(req.id, "Missing required parameter: uri");
 
-        // Fallback: find the first instance that declares this tool.
-        for (const instance of this._instances.values()) {
-            if (instance.getTools().some((t) => t.name === name)) {
-                return this._callTool(req, instance, name, args);
-            }
-        }
-
-        return Mcp.toolNotFound(req.id, name);
+        const r = this._resourceIndex.get(uri) ?? this._matchTemplate(uri);
+        if (!r) return Mcp.instanceNotFound(req.id, uri);
+        return this._callTool(req, r, uri, name, args);
     }
 
     // -------------------------------------------------------------------------
@@ -419,7 +388,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             case "tools/list":
                 return this._handlers.toolsList(req);
             case "tools/call":
-                return this._handlers.toolsCall(req);
+                return this._handlers.toolsCallAsync(req);
             default:
                 return Mcp.methodNotFound(req.id, req.method);
         }
@@ -476,14 +445,39 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      * Any registered behavior implies both `resources` and `tools` support.
      */
     private _deriveCapabilities(): McpServerCapabilities {
-        if (this._behaviors.size === 0 && this._instances.size === 0) return {};
+        if (this._behaviors.size === 0) return {};
         return { resources: { listChanged: true }, tools: { listChanged: true } };
     }
 
+    /**
+     * Finds the behavior whose URI template matches `uri`.
+     *
+     * Converts each `{variable}` placeholder to a regex segment that matches
+     * any non-slash sequence, then tests the full URI against the pattern.
+     * Returns the first matching behavior, or `undefined` when none match.
+     *
+     * Example: template `babylon://camera/{cameraId}` matches `babylon://camera/main`.
+     */
+    private _matchTemplate(uri: string): IMcpRuntimeOperations | undefined {
+        for (const behavior of this._behaviors.values()) {
+            for (const { uriTemplate } of behavior.getResourceTemplates()) {
+                // Escape regex meta-chars in the template, then replace {var} with a
+                // segment wildcard.  Anchors ensure the whole URI must match.
+                const pattern = uriTemplate
+                    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&") // escape special chars
+                    .replace(/\\\{[^}]+\\\}/g, "[^/]+");     // un-escape & expand {var}
+                if (new RegExp(`^${pattern}$`).test(uri)) {
+                    return behavior;
+                }
+            }
+        }
+        return undefined;
+    }
+
     /** Invokes a tool on a specific instance and wraps the result as a JSON-RPC response. */
-    private async _callTool(req: JsonRpcRequest, instance: IMcpBehaviorInstance, name: string, args: unknown): Promise<JsonRpcResponse> {
+    private async _callTool(req: JsonRpcRequest, instance: IMcpRuntimeOperations, uri: string, name: string, args: Record<string, unknown>): Promise<JsonRpcResponse> {
         try {
-            const result = await instance.callTool(name, args);
+            const result = await instance.executeToolAsync(uri, name, args);
             return Mcp.toolCallResult(req.id, JSON.stringify(result));
         } catch (err) {
             return Mcp.internalError(req.id, err instanceof Error ? err.message : "Internal error");

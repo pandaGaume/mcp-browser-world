@@ -23,7 +23,7 @@ export class McpServerBuilder implements IMcpServerBuilder {
     private _wsUrl = "";
     private _initializer: IMcpInitializer | undefined;
     private _handlers: IMcpServerHandlers | undefined;
-    private _behaviors: IMcpBehavior<unknown>[] = [];
+    private _behaviors: IMcpBehavior[] = [];
     private _options: IMcpServerOptions = {};
 
     /** Sets the human-readable name reported in `initialize` responses. */
@@ -53,8 +53,8 @@ export class McpServerBuilder implements IMcpServerBuilder {
      * Accepts multiple behaviors in a single call for convenience.
      * Behaviors contribute to the advertised capabilities and enable {@link IMcpServer.attach}.
      */
-    withBehavior<T>(...behavior: IMcpBehavior<T>[]): this {
-        this._behaviors.push(...(behavior as IMcpBehavior<unknown>[]));
+    register(...behavior: IMcpBehavior[]): this {
+        this._behaviors.push(...(behavior as IMcpBehavior[]));
         return this;
     }
 
@@ -89,7 +89,7 @@ export class McpServerBuilder implements IMcpServerBuilder {
         const server = new McpServer(this._name, this._wsUrl, this._options, this._initializer, this._handlers);
 
         for (const behavior of this._behaviors) {
-            server.registerBehavior(behavior);
+            server.register(behavior);
         }
 
         return server;

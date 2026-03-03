@@ -11,8 +11,13 @@
  * | MCP_TUNNEL_CLIENT_PATH     | /                                       |
  * | MCP_TUNNEL_MCP_PATH        | /mcp                                    |
  * | MCP_TUNNEL_WWW_DIR         | packages/host/www      (monorepo root)  |
- * | MCP_TUNNEL_BUNDLE_DIR      | packages/dev/core/bundle                |
+ * | MCP_TUNNEL_BUNDLE_DIR      | packages/host/www/bundle                |
  * | MCP_TUNNEL_NO_OPEN         | (set to any value to skip auto-launch)  |
+ *
+ * Populate packages/host/www/bundle/ by running:
+ *   npm run build:all        (TypeScript + webpack production + deploy)
+ *   npm run build:all:dev    (TypeScript + webpack development + deploy)
+ *   npm run deploy:bundles   (deploy only, after bundles are already built)
  *
  * All path env vars are resolved relative to `process.cwd()`.
  * When run via `npm run start --workspace=@dev/tunnel` from the repo root,
@@ -53,10 +58,13 @@ const mcpPath = process.env["MCP_TUNNEL_MCP_PATH"] ?? "/mcp";
 const ssePath = "/sse"; // Not currently configurable since it's hardcoded in the client bundle.
 
 // Default paths assume this binary is dist/bin.js inside packages/dev/tunnel/
-//   __dist/../../../host/www       → packages/host/www
-//   __dist/../../core/bundle       → packages/dev/core/bundle
+//   __dist/../../../host/www         → packages/host/www
+//   __dist/../../../host/www/bundle  → packages/host/www/bundle  (all bundles aggregated here)
+//
+// Run `npm run build:all` (or `npm run deploy:bundles`) from the repo root
+// to compile, webpack, and copy all bundles into packages/host/www/bundle/.
 const wwwDir = resolvePath("MCP_TUNNEL_WWW_DIR", "../../../host/www");
-const bundleDir = resolvePath("MCP_TUNNEL_BUNDLE_DIR", "../../core/bundle");
+const bundleDir = resolvePath("MCP_TUNNEL_BUNDLE_DIR", "../../../host/www/bundle");
 
 // ---------------------------------------------------------------------------
 // Server bootstrap

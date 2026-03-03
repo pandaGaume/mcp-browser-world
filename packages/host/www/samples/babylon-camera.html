@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>MCP Babylon — Template</title>
+        <link rel="stylesheet" href="css/sample.css" />
+    </head>
+    <body>
+        <header>
+            <h1 id="page-title">MCP Babylon — Template</h1>
+            <span id="status-badge" class="badge disconnected">Disconnected</span>
+        </header>
+
+        <div class="layout">
+            <!-- ── Left panel: connection ──────────────────── -->
+            <aside class="left-panel panel">
+                <div class="panel-title">Connection</div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label for="ws-url">Tunnel provider base URL</label>
+                        <input type="text" id="ws-url" value="ws://localhost:3000/provider" />
+                    </div>
+                    <div class="field">
+                        <label for="server-name">Server name</label>
+                        <input type="text" id="server-name" value="" />
+                    </div>
+                    <div class="btn-row">
+                        <button id="start-btn">▶ Start</button>
+                        <button id="stop-btn" disabled>■ Stop</button>
+                    </div>
+                    <div class="field" id="mcp-endpoint-field" style="display: none; margin-top: 14px">
+                        <label for="mcp-endpoint">MCP endpoint</label>
+                        <input type="text" id="mcp-endpoint" readonly style="color: var(--green); cursor: text" />
+                    </div>
+                </div>
+            </aside>
+
+            <!-- ── Right column ────────────────────────────── -->
+            <div class="right-column">
+                <!-- Top: Babylon scene -->
+                <div class="scene-panel">
+                    <canvas id="renderCanvas"></canvas>
+                </div>
+
+                <!-- Bottom: console -->
+                <section class="console-panel panel">
+                    <div class="panel-title">Console</div>
+                    <div class="panel-body" id="console-output"></div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Babylon.js core (CDN) -->
+        <script src="https://cdn.babylonjs.com/babylon.js"></script>
+
+        <!-- MCP bundles — load order matters:
+             1. mcp-core.js    → window.McpCore    (shared interfaces, externalized by mcp-babylon)
+             2. mcp-server.js  → window.McpServer   (McpServerBuilder and protocol impl)
+             3. mcp-babylon.js → window.McpBabylon  (McpCameraAdapter, McpCameraBehavior, …) -->
+        <script src="/bundle/mcp-core.js"></script>
+        <script src="/bundle/mcp-server.js"></script>
+        <script src="/bundle/mcp-babylon.js"></script>
+
+        <script>
+            "use strict";
+
+            // =========================================================
+            // Page title & server name derived from the file name
+            // =========================================================
+            (function () {
+                const path = window.location.pathname;
+                const file = path.substring(path.lastIndexOf("/") + 1);
+                const name = file.split(".").slice(0, -1).join(".") || file;
+                document.getElementById("server-name").value = name;
+                document.getElementById("page-title").textContent = `MCP Babylon — ${name}`;
+                document.title = `MCP Babylon — ${name}`;
+            })();
+
+            // =========================================================
+            // Console helpers
+            // =========================================================
+            const consoleEl = document.getElementById("console-output");
+
+            function log(msg, level = "info") {
+                const ts = new Date().toLocaleTimeString("en", {
+                    hour12: false,
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                });
+                const div = document.createElement("div");
+                div.className = `log-line ${level}`;
+                div.innerHTML = `<span class="ts">${ts}</span>  <span class="msg">${escHtml(msg)}</span>`;
+                consoleEl.appendChild(div);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+
+            function escHtml(s) {
+                return String(s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            // =========================================================
+            // Status badge
+            // =========================================================
+            const badgeEl = document.getElementById("status-badge");
+
+            function setStatus(state) {
+                badgeEl.className = `badge ${state}`;
+                badgeEl.textContent = {
+                    disconnected: "Disconnected",
+                    connecting:   "Connecting…",
+                    connected:    "Connected",
+                }[state] ?? state;
+            }
+
+            // =========================================================
+            // Babylon.js engine + scene
+            // =========================================================
+            const canvas = document.getElementById("renderCanvas");
+            const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+            const scene  = new BABYLON.Scene(engine);
+
+            engine.runRenderLoop(() => scene.render());
+            window.addEventListener("resize", () => engine.resize());
+
+            // =========================================================
+            // ✏️  Fill in your scene here
+            // =========================================================
+
+            /**
+             * Populate the Babylon.js scene.
+             * Called once after the engine and scene are ready.
+             *
+             * @param {BABYLON.Scene} scene
+             */
+            function createScene(scene) {
+
+                // ── Lighting ─────────────────────────────────────────────
+                // Soft ambient from above
+                const hemi = new BABYLON.HemisphericLight(
+                    "hemi",
+                    new BABYLON.Vector3(0, 1, 0),
+                    scene
+                );
+                hemi.intensity = 0.65;
+
+                // Directional sun for clear sphere shading
+                const sun = new BABYLON.DirectionalLight(
+                    "sun",
+                    new BABYLON.Vector3(-1, -2, -1).normalize(),
+                    scene
+                );
+                sun.intensity = 0.7;
+
+                // ── Ground ───────────────────────────────────────────────
+                const ground = BABYLON.MeshBuilder.CreateGround(
+                    "ground",
+                    { width: 20, height: 20 },
+                    scene
+                );
+                const gMat = new BABYLON.StandardMaterial("groundMat", scene);
+                gMat.diffuseColor  = new BABYLON.Color3(0.13, 0.13, 0.20);
+                gMat.specularColor = BABYLON.Color3.Black();
+                ground.material    = gMat;
+
+                // ── 12 clock-face spheres (0 = noon, 1 … 11 clockwise) ──
+                //
+                //   Clock angle convention (XZ plane, Y-up):
+                //     h = 0  → noon     → −Z axis   (angle = −π/2)
+                //     h = 3  → 3 o'clock → +X axis  (angle =   0 )
+                //     h = 6  → 6 o'clock → +Z axis  (angle = +π/2)
+                //     h = 9  → 9 o'clock → −X axis  (angle =   π )
+                //
+                //   angle(h) = h/12 × 2π − π/2
+                //
+                const CLOCK_RADIUS = 5; // circle radius (units)
+                const SPHERE_R     = 1; // sphere radius  (units)
+
+                // 12 visually distinct colors, one per hour
+                const COLORS = [
+                    new BABYLON.Color3(1.00, 0.20, 0.20), //  0  noon    — red
+                    new BABYLON.Color3(1.00, 0.50, 0.10), //  1          — orange
+                    new BABYLON.Color3(1.00, 0.85, 0.10), //  2          — amber
+                    new BABYLON.Color3(0.55, 0.90, 0.10), //  3          — yellow-green
+                    new BABYLON.Color3(0.10, 0.80, 0.20), //  4          — green
+                    new BABYLON.Color3(0.10, 0.90, 0.70), //  5          — teal
+                    new BABYLON.Color3(0.10, 0.65, 1.00), //  6          — sky-blue
+                    new BABYLON.Color3(0.10, 0.30, 1.00), //  7          — blue
+                    new BABYLON.Color3(0.50, 0.10, 1.00), //  8          — violet
+                    new BABYLON.Color3(0.85, 0.10, 1.00), //  9          — purple
+                    new BABYLON.Color3(1.00, 0.10, 0.70), // 10          — magenta
+                    new BABYLON.Color3(1.00, 0.10, 0.40), // 11          — rose
+                ];
+
+                for (let h = 0; h < 12; h++) {
+                    const angle = (h / 12) * 2 * Math.PI - Math.PI / 2;
+
+                    const sphere = BABYLON.MeshBuilder.CreateSphere(
+                        String(h),
+                        { diameter: SPHERE_R * 2, segments: 16 },
+                        scene
+                    );
+                    sphere.position.x = CLOCK_RADIUS * Math.cos(angle);
+                    sphere.position.y = SPHERE_R;  // centre at y=1, bottom rests on y=0
+                    sphere.position.z = CLOCK_RADIUS * Math.sin(angle);
+
+                    const mat = new BABYLON.StandardMaterial(`mat${h}`, scene);
+                    mat.diffuseColor  = COLORS[h];
+                    mat.specularColor = COLORS[h].scale(0.3);
+                    sphere.material   = mat;
+
+                    log(
+                        `Sphere "${h}" → (${sphere.position.x.toFixed(2)}, 1.00, ${sphere.position.z.toFixed(2)}) Left handed Y upward.`,
+                        "dim"
+                    );
+                }
+
+                // ── ArcRotateCamera — exactly at (0, 5, 0) looking at noon ──
+                //
+                //   Target  = centre of sphere "0" (noon) = (0, 1, −CLOCK_RADIUS)
+                //
+                //   The ArcRotateCamera position formula is:
+                //     x = tgt.x + radius · cos(α) · sin(β)
+                //     y = tgt.y + radius · cos(β)
+                //     z = tgt.z + radius · sin(α) · sin(β)
+                //
+                //   Solving for position (0, 5, 0) with target (0, 1, −5):
+                //     Δ = (0, 4, 5)  →  radius = √41 ≈ 6.40
+                //     β = acos(4/√41) ≈ 51.3°   (elevation from straight-up)
+                //     α = π/2                     (sin α = 1, cos α = 0)
+                //
+                const noonTarget = new BABYLON.Vector3(0, SPHERE_R, -CLOCK_RADIUS);
+                const camRadius  = Math.sqrt(CLOCK_RADIUS * CLOCK_RADIUS + 16); // √(5²+4²) = √41
+                const camBeta    = Math.acos(4 / camRadius);                    // 4 = camY − targetY
+
+                const camera = new BABYLON.ArcRotateCamera(
+                    "camera",
+                    Math.PI / 2, // α = π/2 → camera sits behind noon, on the +Z side
+                    camBeta,     // β ≈ 51.3° → places camera at y = 5
+                    camRadius,   // radius ≈ 6.40
+                    noonTarget,
+                    scene
+                );
+                camera.attachControl(canvas, true);
+
+                log(`Camera at (0, 5, 0) → looking at noon sphere (0, 1, ${-CLOCK_RADIUS})`, "ok");
+            }
+
+            createScene(scene);
+
+            // =========================================================
+            // MCP server lifecycle
+            // =========================================================
+            const { McpServerBuilder } = window.McpServer;
+            const { McpCameraAdapter, McpCameraBehavior } = window.McpBabylon;
+            let server = null;
+
+            /**
+             * Creates and returns the MCP behavior(s) for this scene.
+             * Called by the Start button handler just before builder.build().
+             *
+             * Pattern:
+             *   Adapter  — thin bridge to the live Babylon.js scene
+             *              (reads camera state, dispatches tool calls).
+             *   Behavior — MCP-facing schema layer
+             *              (declares resources, URI templates, tool definitions).
+             *
+             * @param {BABYLON.Scene} scene
+             * @returns {import('@dev/core').IMcpBehavior}
+             */
+            function createBehaviour(scene) {
+                // McpCameraAdapter indexes all cameras in the scene, keeps the index
+                // in sync via onNewCameraAddedObservable / onCameraRemovedObservable,
+                // and handles readResourceAsync / executeToolAsync at runtime.
+                const adapter = new McpCameraAdapter(scene);
+
+                // McpCameraBehavior owns the MCP-protocol identity:
+                //   - resource  : babylon://camera          (list all cameras)
+                //   - template  : babylon://camera/{cameraId}  (single camera state)
+                //   - tool      : camera.setTarget          (move the look-at point)
+                const behavior = new McpCameraBehavior(adapter);
+
+                return behavior;
+            }
+            
+            document.getElementById("start-btn").addEventListener("click", async () => {
+                const providerBase = document.getElementById("ws-url").value.trim().replace(/\/$/, "");
+                const name = document.getElementById("server-name").value.trim() || "babylon-template";
+
+                const wsUrl = `${providerBase}/${encodeURIComponent(name)}`;
+
+                const httpBase = wsUrl
+                    .replace(/^ws(s?):\/\//, "http$1://")
+                    .replace(/\/provider\//, "/");
+                const mcpHttpUrl = httpBase.endsWith("/mcp") ? httpBase : httpBase + "/mcp";
+
+                log(`Connecting to ${wsUrl} …`, "dim");
+                setStatus("connecting");
+
+                const builder = new McpServerBuilder()
+                    .withWsUrl(wsUrl)
+                    .withName(name)
+                    .withInitializer({
+                        initialize(_clientInfo, _caps) {
+                            return {
+                                protocolVersion: "2024-11-05",
+                                serverInfo: { name, version: "0.0.0" },
+                            };
+                        },
+                    });
+                const behaviours = createBehaviour(scene);
+                if( behaviours) {
+                    if (Array.isArray(behaviours)){
+                        builder.register(...behaviours);
+                    } else {
+                        builder.register(behaviours);
+                    }
+                }
+                server = builder.build();
+
+                try {
+                    await server.start();
+                    setStatus("connected");
+                    log(`Connected as provider — "${name}"`, "ok");
+                    log(`MCP Inspector → ${mcpHttpUrl}`, "ok");
+                    log("Waiting for MCP client…", "dim");
+
+                    document.getElementById("start-btn").disabled = true;
+                    document.getElementById("stop-btn").disabled = false;
+                    document.getElementById("mcp-endpoint").value = mcpHttpUrl;
+                    document.getElementById("mcp-endpoint-field").style.display = "";
+                } catch (err) {
+                    setStatus("disconnected");
+                    log(`Failed to connect: ${err}`, "error");
+                    server = null;
+                }
+            });
+
+            document.getElementById("stop-btn").addEventListener("click", async () => {
+                if (!server) return;
+                try {
+                    await server.stop();
+                    log("Server stopped.", "warn");
+                } catch (err) {
+                    log(`Stop error: ${err}`, "error");
+                } finally {
+                    server = null;
+                    setStatus("disconnected");
+                    document.getElementById("start-btn").disabled = false;
+                    document.getElementById("stop-btn").disabled = true;
+                    document.getElementById("mcp-endpoint-field").style.display = "none";
+                    document.getElementById("mcp-endpoint").value = "";
+                }
+            });
+
+            log("Ready. Press ▶ Start to connect as an MCP provider.", "dim");
+        </script>
+    </body>
+</html>

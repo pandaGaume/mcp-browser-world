@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>MCP Babylon — Template</title>
+        <link rel="stylesheet" href="css/sample.css" />
+    </head>
+    <body>
+        <header>
+            <h1 id="page-title">MCP Babylon — Template</h1>
+            <span id="status-badge" class="badge disconnected">Disconnected</span>
+        </header>
+
+        <div class="layout">
+            <!-- ── Left panel: connection ──────────────────── -->
+            <aside class="left-panel panel">
+                <div class="panel-title">Connection</div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label for="ws-url">Tunnel provider base URL</label>
+                        <input type="text" id="ws-url" value="ws://localhost:3000/provider" />
+                    </div>
+                    <div class="field">
+                        <label for="server-name">Server name</label>
+                        <input type="text" id="server-name" value="" />
+                    </div>
+                    <div class="btn-row">
+                        <button id="start-btn">▶ Start</button>
+                        <button id="stop-btn" disabled>■ Stop</button>
+                    </div>
+                    <div class="field" id="mcp-endpoint-field" style="display: none; margin-top: 14px">
+                        <label for="mcp-endpoint">MCP endpoint</label>
+                        <input type="text" id="mcp-endpoint" readonly style="color: var(--green); cursor: text" />
+                    </div>
+                </div>
+            </aside>
+
+            <!-- ── Right column ────────────────────────────── -->
+            <div class="right-column">
+                <!-- Top: Babylon scene -->
+                <div class="scene-panel">
+                    <canvas id="renderCanvas"></canvas>
+                </div>
+
+                <!-- Bottom: console -->
+                <section class="console-panel panel">
+                    <div class="panel-title">Console</div>
+                    <div class="panel-body" id="console-output"></div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Babylon.js core (CDN) -->
+        <script src="https://cdn.babylonjs.com/babylon.js"></script>
+
+        <!-- MCP bundles — load order matters:
+             1. mcp-core.js   → window.McpCore   (shared interfaces, required by mcp-babylon)
+             2. mcp-server.js → window.McpServer  (McpServerBuilder and protocol impl)
+             3. mcp-babylon.js→ window.McpBabylon (adapters/behaviors — add when needed) -->
+        <script src="/bundle/mcp-core.js"></script>
+        <script src="/bundle/mcp-server.js"></script>
+
+        <script>
+            "use strict";
+
+            // =========================================================
+            // Page title & server name derived from the file name
+            // =========================================================
+            (function () {
+                const path = window.location.pathname;
+                const file = path.substring(path.lastIndexOf("/") + 1);
+                const name = file.split(".").slice(0, -1).join(".") || file;
+                document.getElementById("server-name").value = name;
+                document.getElementById("page-title").textContent = `MCP Babylon — ${name}`;
+                document.title = `MCP Babylon — ${name}`;
+            })();
+
+            // =========================================================
+            // Console helpers
+            // =========================================================
+            const consoleEl = document.getElementById("console-output");
+
+            function log(msg, level = "info") {
+                const ts = new Date().toLocaleTimeString("en", {
+                    hour12: false,
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                });
+                const div = document.createElement("div");
+                div.className = `log-line ${level}`;
+                div.innerHTML = `<span class="ts">${ts}</span>  <span class="msg">${escHtml(msg)}</span>`;
+                consoleEl.appendChild(div);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+
+            function escHtml(s) {
+                return String(s)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;");
+            }
+
+            // =========================================================
+            // Status badge
+            // =========================================================
+            const badgeEl = document.getElementById("status-badge");
+
+            function setStatus(state) {
+                badgeEl.className = `badge ${state}`;
+                badgeEl.textContent = {
+                    disconnected: "Disconnected",
+                    connecting:   "Connecting…",
+                    connected:    "Connected",
+                }[state] ?? state;
+            }
+
+            // =========================================================
+            // Babylon.js engine + scene
+            // =========================================================
+            const canvas = document.getElementById("renderCanvas");
+            const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
+            const scene  = new BABYLON.Scene(engine);
+
+            engine.runRenderLoop(() => scene.render());
+            window.addEventListener("resize", () => engine.resize());
+
+            // =========================================================
+            // ✏️  Fill in your scene here
+            // =========================================================
+
+            /**
+             * Populate the Babylon.js scene.
+             * Called once after the engine and scene are ready.
+             *
+             * @param {BABYLON.Scene} scene
+             */
+            function createScene(scene) {
+                // TODO: add cameras, lights, meshes, behaviors …
+            }
+
+            createScene(scene);
+
+            // =========================================================
+            // MCP server lifecycle
+            // =========================================================
+            const { McpServerBuilder } = window.McpServer;
+            let server = null;
+
+            function createBehaviour(scene) {
+                // TODO: add behavious…
+            }
+
+            document.getElementById("start-btn").addEventListener("click", async () => {
+                const providerBase = document.getElementById("ws-url").value.trim().replace(/\/$/, "");
+                const name = document.getElementById("server-name").value.trim() || "babylon-template";
+
+                const wsUrl = `${providerBase}/${encodeURIComponent(name)}`;
+
+                const httpBase = wsUrl
+                    .replace(/^ws(s?):\/\//, "http$1://")
+                    .replace(/\/provider\//, "/");
+                const mcpHttpUrl = httpBase.endsWith("/mcp") ? httpBase : httpBase + "/mcp";
+
+                log(`Connecting to ${wsUrl} …`, "dim");
+                setStatus("connecting");
+
+                const builder = new McpServerBuilder()
+                    .withWsUrl(wsUrl)
+                    .withName(name)
+                    .withInitializer({
+                        initialize(_clientInfo, _caps) {
+                            return {
+                                protocolVersion: "2024-11-05",
+                                serverInfo: { name, version: "0.0.0" },
+                            };
+                        },
+                    });
+                const behaviours = createBehaviour(scene);
+                if( behaviours) {
+                    if (Array.isArray(behaviours)){
+                        builder.register(...behaviours);
+                    } else {
+                        builder.register(behaviours);
+                    }
+                }
+
+                server = builder.build();
+
+                try {
+                    await server.start();
+                    setStatus("connected");
+                    log(`Connected as provider — "${name}"`, "ok");
+                    log(`MCP Inspector → ${mcpHttpUrl}`, "ok");
+                    log("Waiting for MCP client…", "dim");
+
+                    document.getElementById("start-btn").disabled = true;
+                    document.getElementById("stop-btn").disabled = false;
+                    document.getElementById("mcp-endpoint").value = mcpHttpUrl;
+                    document.getElementById("mcp-endpoint-field").style.display = "";
+                } catch (err) {
+                    setStatus("disconnected");
+                    log(`Failed to connect: ${err}`, "error");
+                    server = null;
+                }
+            });
+
+            document.getElementById("stop-btn").addEventListener("click", async () => {
+                if (!server) return;
+                try {
+                    await server.stop();
+                    log("Server stopped.", "warn");
+                } catch (err) {
+                    log(`Stop error: ${err}`, "error");
+                } finally {
+                    server = null;
+                    setStatus("disconnected");
+                    document.getElementById("start-btn").disabled = false;
+                    document.getElementById("stop-btn").disabled = true;
+                    document.getElementById("mcp-endpoint-field").style.display = "none";
+                    document.getElementById("mcp-endpoint").value = "";
+                }
+            });
+
+            log("Ready. Press ▶ Start to connect as an MCP provider.", "dim");
+        </script>
+    </body>
+</html>

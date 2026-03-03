@@ -1,0 +1,207 @@
+/* ============================================================
+   sample.css — shared dark-theme styles for MCP Babylon samples
+   ============================================================ */
+
+/* ── Design tokens ─────────────────────────────────────────── */
+:root {
+    --bg:      #1e1e2e;
+    --surface: #2a2a3d;
+    --border:  #3a3a55;
+    --text:    #cdd6f4;
+    --muted:   #6c7086;
+    --green:   #a6e3a1;
+    --red:     #f38ba8;
+    --yellow:  #f9e2af;
+    --blue:    #89b4fa;
+    --accent:  #cba6f7;
+    --mono:    "Cascadia Code", "Fira Code", Consolas, monospace;
+}
+
+/* ── Reset ──────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* ── Base ───────────────────────────────────────────────────── */
+body {
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-shrink: 0;
+}
+
+header h1 {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+/* ── Status badge ───────────────────────────────────────────── */
+.badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 99px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.badge.disconnected { background: #3a2030; color: var(--red);    }
+.badge.connecting   { background: #3a3010; color: var(--yellow); }
+.badge.connected    { background: #1a3020; color: var(--green);  }
+
+/* ── Root layout: left panel + right column ─────────────────── */
+.layout {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+/* ── Left panel (connection) ────────────────────────────────── */
+.left-panel {
+    width: 300px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Right column: scene (top) + console (bottom) ───────────── */
+.right-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* ── Generic panel shell ────────────────────────────────────── */
+.panel {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+
+.panel-body {
+    padding: 14px 16px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* ── Scene panel ────────────────────────────────────────────── */
+.scene-panel {
+    flex: 1;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+}
+
+#renderCanvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+/* ── Console panel ──────────────────────────────────────────── */
+.console-panel {
+    height: 220px;
+    flex-shrink: 0;
+}
+
+#console-output {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    line-height: 1.6;
+}
+
+.log-line .ts  { color: var(--muted); user-select: none; }
+.log-line.info .msg  { color: var(--text);   }
+.log-line.ok   .msg  { color: var(--green);  }
+.log-line.warn .msg  { color: var(--yellow); }
+.log-line.error .msg { color: var(--red);    }
+.log-line.dim  .msg  { color: var(--muted);  }
+
+/* ── Form controls ──────────────────────────────────────────── */
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-bottom: 14px;
+}
+
+.field label {
+    font-size: 0.75rem;
+    color: var(--muted);
+}
+
+input[type="text"],
+input[type="number"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    padding: 6px 10px;
+    width: 100%;
+}
+
+input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+}
+
+.btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+button {
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 7px 16px;
+    transition: opacity 0.15s;
+}
+
+button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+#start-btn { background: var(--green);  color: #1a2a1a; }
+#stop-btn  { background: var(--red);    color: #2a1a1a; }

@@ -110,3 +110,7 @@ export interface JsonRpcError {
     /** Optional additional information about the error. May be any serializable value. */
     data?: unknown;
 }
+
+export type JsonRpcMessage = JsonRpcRequest | JsonRpcResponse | JsonRpcNotification;
+
+export const JsonRpcMimeType = "application/json";

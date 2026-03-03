@@ -1,4 +1,16 @@
 {
-    "extends": "./tsconfig.build.json",
-    "compilerOptions": {}
+    // Solution file — no compiler options here, only project references.
+    // TypeScript uses this for `tsc -b` (build mode) from the repo root.
+    //
+    // Each referenced package has its own tsconfig.build.json with:
+    //   composite: true   — enables incremental project-reference builds
+    //   outDir: "./dist"  — keeps compiled output out of src/
+    //
+    // Shared compiler options live in tsconfig.build.json (extended by each package).
+    "files": [],
+    "references": [
+        { "path": "packages/dev/core/tsconfig.build.json" },
+        { "path": "packages/dev/babylon/tsconfig.build.json" },
+        { "path": "packages/dev/tunnel/tsconfig.build.json" }
+    ]
 }
