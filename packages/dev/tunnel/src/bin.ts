@@ -40,12 +40,20 @@ import { WsTunnelBuilder } from "./index.js";
 const __dist = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Resolves a path from an env var (relative to CWD) or falls back to a path
+ * The directory where `npm run` was originally invoked.
+ * npm sets INIT_CWD before changing into the workspace package directory,
+ * so relative env-var paths like "certs/cert.pem" are resolved from the
+ * monorepo root rather than from packages/dev/tunnel/.
+ */
+const initCwd = process.env["INIT_CWD"] ?? process.cwd();
+
+/**
+ * Resolves a path from an env var (relative to INIT_CWD) or falls back to a path
  * relative to the compiled dist/ directory.
  */
 function resolvePath(envVar: string, fallbackFromDist: string): string {
     const raw = process.env[envVar];
-    return raw ? path.resolve(process.cwd(), raw) : path.resolve(__dist, fallbackFromDist);
+    return raw ? path.resolve(initCwd, raw) : path.resolve(__dist, fallbackFromDist);
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +90,10 @@ async function main(): Promise<void> {
     }
 
     if (tlsCertFile && tlsKeyFile) {
-        builder.withTlsFiles(tlsCertFile, tlsKeyFile);
+        builder.withTlsFiles(
+            path.resolve(initCwd, tlsCertFile),
+            path.resolve(initCwd, tlsKeyFile),
+        );
     }
 
     // Mount static directories that actually exist on disk.

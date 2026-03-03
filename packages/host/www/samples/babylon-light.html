@@ -19,7 +19,7 @@
                 <div class="panel-body">
                     <div class="field">
                         <label for="ws-url">Tunnel provider base URL</label>
-                        <input type="text" id="ws-url" value="ws://localhost:3000/provider" />
+                        <input type="text" id="ws-url" value="" />
                     </div>
                     <div class="field">
                         <label for="server-name">Server name</label>
@@ -75,6 +75,12 @@
                 document.getElementById("server-name").value = name;
                 document.getElementById("page-title").textContent = `MCP Babylon — ${name}`;
                 document.title = `MCP Babylon — ${name}`;
+
+                // Derive the provider WebSocket URL from the current page origin so
+                // ws:// is used over HTTP and wss:// is used over HTTPS (avoids
+                // mixed-content errors when the tunnel runs in TLS mode).
+                const wsScheme = window.location.protocol === "https:" ? "wss:" : "ws:";
+                document.getElementById("ws-url").value = `${wsScheme}//${window.location.host}/provider`;
             })();
 
             // =========================================================
