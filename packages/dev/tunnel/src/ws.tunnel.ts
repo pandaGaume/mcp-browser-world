@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as http from "http";
+import * as https from "https";
 import * as nodePath from "path";
 import { randomUUID } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
@@ -134,6 +135,19 @@ export interface WsTunnelOptions {
      * Matched by longest URL prefix; directory requests fall back to `index.html`.
      */
     staticMounts?: StaticMount[];
+
+    /**
+     * TLS configuration. When provided, the server uses HTTPS and WSS instead of HTTP and WS.
+     * Both `cert` and `key` must be PEM-encoded strings (file contents, not file paths).
+     * Use {@link WsTunnelBuilder.withTlsFiles} to load from disk paths.
+     * @default undefined — plain HTTP/WS
+     */
+    tls?: {
+        /** PEM-encoded TLS certificate. */
+        cert: string;
+        /** PEM-encoded private key. */
+        key: string;
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +177,7 @@ export interface WsTunnelOptions {
  */
 export class WsTunnel {
     private readonly _options: WsTunnelOptions;
-    private _httpServer: http.Server | null = null;
+    private _httpServer: http.Server | https.Server | null = null;
     private _wss: WebSocketServer | null = null;
 
     /**
@@ -211,7 +225,10 @@ export class WsTunnel {
      */
     start(): Promise<void> {
         return new Promise((resolve) => {
-            this._httpServer = http.createServer((req, res) => this._handleHttp(req, res));
+            const handler = (req: IncomingMessage, res: ServerResponse) => this._handleHttp(req, res);
+            this._httpServer = this._options.tls
+                ? https.createServer({ cert: this._options.tls.cert, key: this._options.tls.key }, handler)
+                : http.createServer(handler);
             this._wss = new WebSocketServer({ server: this._httpServer });
 
             this._wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {

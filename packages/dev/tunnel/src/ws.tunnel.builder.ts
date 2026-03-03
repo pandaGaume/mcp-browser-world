@@ -1,3 +1,4 @@
+import * as fs from "fs";
 import { WsTunnel, type WsTunnelOptions, type StaticMount } from "./ws.tunnel.js";
 
 /**
@@ -30,6 +31,7 @@ export class WsTunnelBuilder {
     private _mcpPath = "/mcp";
     private _samplesIndexPath = "/__samples_index__";
     private _staticMounts: StaticMount[] = [];
+    private _tls: { cert: string; key: string } | undefined = undefined;
 
     /** Sets the TCP port the tunnel listens on. */
     withPort(port: number): this {
@@ -115,6 +117,29 @@ export class WsTunnelBuilder {
         return this;
     }
 
+    /**
+     * Enables HTTPS/WSS mode by supplying PEM-encoded certificate and key strings directly.
+     * Call this when you already have the PEM content in memory.
+     */
+    withTls(cert: string, key: string): this {
+        this._tls = { cert, key };
+        return this;
+    }
+
+    /**
+     * Enables HTTPS/WSS mode by reading the certificate and key from the given file paths.
+     * Files are read synchronously at call time.
+     *
+     * @param certPath  Path to the PEM certificate file (e.g. `fullchain.pem`).
+     * @param keyPath   Path to the PEM private-key file (e.g. `privkey.pem`).
+     */
+    withTlsFiles(certPath: string, keyPath: string): this {
+        return this.withTls(
+            fs.readFileSync(certPath, "utf8"),
+            fs.readFileSync(keyPath, "utf8"),
+        );
+    }
+
     /** Constructs and returns a configured {@link WsTunnel}. */
     build(): WsTunnel {
         const options: WsTunnelOptions = {
@@ -127,6 +152,7 @@ export class WsTunnelBuilder {
             mcpPath: this._mcpPath,
             samplesIndexPath: this._samplesIndexPath,
             staticMounts: this._staticMounts.length > 0 ? [...this._staticMounts] : undefined,
+            tls: this._tls,
         };
         return new WsTunnel(options);
     }
