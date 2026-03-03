@@ -33,7 +33,6 @@ export class McpCameraAdapter extends McpAdapterBase {
         this._initializeCameraIndex();
         this._observers.push(this._scene.onNewCameraAddedObservable.add(this._onCameraAdded.bind(this)));
         this._observers.push(this._scene.onCameraRemovedObservable.add(this._onCameraRemoved.bind(this)));
-        this._initializeCameraIndex();
     }
 
     /**
