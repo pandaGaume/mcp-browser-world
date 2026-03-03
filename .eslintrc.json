@@ -4,7 +4,11 @@
     "parserOptions": {
         "ecmaVersion": 2020,
         "sourceType": "module",
-        "project": "./tsconfig.json"
+        "project": [
+            "./packages/dev/core/tsconfig.build.json",
+            "./packages/dev/babylon/tsconfig.build.json",
+            "./packages/dev/tunnel/tsconfig.build.json"
+        ]
     },
     "plugins": ["@typescript-eslint", "prettier"],
     "extends": [
