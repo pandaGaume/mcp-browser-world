@@ -59,6 +59,12 @@ export interface IVisibleObjectState {
     position?: ICartesian3;
     /** Distance from camera position to mesh bounding sphere center. Always present. */
     distance: number;
+    /**
+     * Fraction of screen area covered by the mesh bounding box (screenW × screenH, 0..1).
+     * Always present — computed for the frustum filter regardless of the include list.
+     * Also used by sortBy:"screenCoverage" without requiring "bounds" in include.
+     */
+    screenCoverage: number;
     /** Present when "bounds" is in include. */
     bounds?: IVisibleObjectBoundsState;
     /** Present when "material" or "color" is in include. */
