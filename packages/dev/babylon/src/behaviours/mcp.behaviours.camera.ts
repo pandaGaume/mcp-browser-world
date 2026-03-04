@@ -607,6 +607,13 @@ export class McpCameraBehavior extends McpBehavior {
                             type: "number",
                             description: "Maximum ray distance in world units. Defaults to unlimited.",
                         },
+                        allHits: {
+                            type: "boolean",
+                            description:
+                                "If true, returns all meshes intersected by the ray (including those behind the first hit), " +
+                                "sorted by distance in the hits array. Useful when objects are stacked or partially occluded. " +
+                                "Defaults to false (closest hit only).",
+                        },
                     },
                     required: ["uri"],
                     additionalProperties: false,

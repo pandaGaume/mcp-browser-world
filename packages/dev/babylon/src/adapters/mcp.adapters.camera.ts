@@ -30,7 +30,7 @@ import {
 import { JsonRpcMimeType, McpAdapterBase, McpResourceContent, McpToolResult, McpToolResults } from "@dev/core";
 import { McpCameraBehavior } from "../behaviours";
 import { McpBabylonDomain, McpCameraResourceUriPrefix } from "../mcp.commons";
-import { ICameraState, IFrustum, IScenePickResult, ISceneVisibleObjectsState, IVisibleObjectMaterialState, IVisibleObjectState, MaterialType, MeshShapeHint, VisibleObjectIncludeField, VisibleObjectSortBy } from "../states";
+import { ICameraState, IFrustum, IScenePickHit, IScenePickResult, ISceneVisibleObjectsState, IVisibleObjectMaterialState, IVisibleObjectState, MaterialType, MeshShapeHint, VisibleObjectIncludeField, VisibleObjectSortBy } from "../states";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
@@ -1200,8 +1200,12 @@ export class McpCameraAdapter extends McpAdapterBase {
     }
 
     /**
-     * Casts a picking ray from {@link camera} through a normalized screen point
-     * and returns the first mesh hit.
+     * Casts a picking ray from {@link camera} through a normalized screen point.
+     *
+     * - Default: returns the closest hit only (scene.pick).
+     * - allHits: true — returns every mesh intersected by the ray, sorted by
+     *   distance (scene.multiPick). Useful when objects are stacked or when the
+     *   first hit is the ground / a transparent surface.
      */
     private _handleScenePickFromCenter(camera: Camera, args: Record<string, unknown>): IScenePickResult {
         const zSign = this._scene.useRightHandedSystem ? 1 : -1;
@@ -1213,17 +1217,56 @@ export class McpCameraAdapter extends McpAdapterBase {
         const normX = typeof spArg?.x === "number" ? spArg.x : 0.5;
         const normY = typeof spArg?.y === "number" ? spArg.y : 0.5;
         const maxDist = typeof args["maxDistance"] === "number" && args["maxDistance"] > 0 ? args["maxDistance"] : undefined;
+        const allHits = args["allHits"] === true;
 
         const pxX = normX * renderWidth;
         const pxY = normY * renderHeight;
 
         const predicate = maxDist
-            ? (mesh: AbstractMesh) => {
-                  const d = Vector3.Distance(camera.position, mesh.getBoundingInfo().boundingSphere.centerWorld);
-                  return d <= maxDist;
-              }
+            ? (mesh: AbstractMesh) => mesh.isPickable && Vector3.Distance(camera.position, mesh.getBoundingInfo().boundingSphere.centerWorld) <= maxDist
             : undefined;
 
+        // ---- allHits: use multiPick to collect every intersection ----
+        if (allHits) {
+            const picks = this._scene.multiPick(pxX, pxY, predicate, camera) ?? [];
+            // multiPick order is not guaranteed — sort by distance ascending.
+            picks.sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+
+            if (picks.length === 0 || !picks[0].hit || !picks[0].pickedMesh) {
+                return { hit: false, hits: [] };
+            }
+
+            const hits: IScenePickHit[] = picks
+                .filter((p) => p.hit && p.pickedMesh)
+                .map((p) => {
+                    const hit: IScenePickHit = {
+                        meshId: p.pickedMesh!.id,
+                        meshName: p.pickedMesh!.name,
+                        distance: p.distance ?? 0,
+                    };
+                    if (p.pickedPoint) {
+                        hit.pickedPoint = { x: p.pickedPoint.x, y: p.pickedPoint.y, z: p.pickedPoint.z * zSign };
+                    }
+                    const n = p.getNormal(true, true);
+                    if (n) hit.normal = { x: n.x, y: n.y, z: n.z * zSign };
+                    if (p.faceId >= 0) hit.faceId = p.faceId;
+                    return hit;
+                });
+
+            const first = hits[0];
+            return {
+                hit: true,
+                meshId: first.meshId,
+                meshName: first.meshName,
+                pickedPoint: first.pickedPoint,
+                distance: first.distance,
+                normal: first.normal,
+                faceId: first.faceId,
+                hits,
+            };
+        }
+
+        // ---- default: single closest hit ----
         const pickInfo = this._scene.pick(pxX, pxY, predicate, false, camera);
 
         if (!pickInfo?.hit || !pickInfo.pickedMesh) {
@@ -1239,7 +1282,7 @@ export class McpCameraAdapter extends McpAdapterBase {
         if (pickInfo.pickedPoint) {
             const pt = pickInfo.pickedPoint;
             result.pickedPoint = { x: pt.x, y: pt.y, z: pt.z * zSign };
-            result.distance = Vector3.Distance(camera.position, pickInfo.pickedPoint);
+            result.distance = pickInfo.distance ?? Vector3.Distance(camera.position, pickInfo.pickedPoint);
         }
 
         const normal = pickInfo.getNormal(true, true);

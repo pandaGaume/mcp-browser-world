@@ -98,16 +98,39 @@ export interface ISceneVisibleObjectsState {
 // scene_pick_from_center
 // -------------------------------------------------------------------------
 
-export interface IScenePickResult {
-    hit: boolean;
-    meshId?: string;
-    meshName?: string;
-    /** World-space point where the ray hit the mesh surface (right-handed y-up). */
+/** Single intersection along a pick ray. Used both as the primary hit and inside the hits array. */
+export interface IScenePickHit {
+    meshId: string;
+    meshName: string;
+    /** World-space pick point (right-handed y-up). */
     pickedPoint?: ICartesian3;
-    /** Distance from the camera position to the picked point. */
-    distance?: number;
-    /** World-space surface normal at the pick point (right-handed y-up). */
+    /** Distance from the camera to this intersection along the ray. */
+    distance: number;
+    /** World-space face normal at the pick point (right-handed y-up). */
     normal?: ICartesian3;
     /** Index of the picked triangular face. */
     faceId?: number;
+}
+
+export interface IScenePickResult {
+    /** True if at least one mesh was hit. */
+    hit: boolean;
+    /** Closest hit mesh id. Present when hit is true. */
+    meshId?: string;
+    /** Closest hit mesh name. Present when hit is true. */
+    meshName?: string;
+    /** World-space pick point of the closest hit (right-handed y-up). */
+    pickedPoint?: ICartesian3;
+    /** Distance from the camera to the closest hit. */
+    distance?: number;
+    /** World-space face normal of the closest hit (right-handed y-up). */
+    normal?: ICartesian3;
+    /** Index of the picked triangular face of the closest hit. */
+    faceId?: number;
+    /**
+     * All intersections along the ray sorted by distance (closest first).
+     * Present only when the allHits option is true.
+     * The first entry mirrors the primary hit fields above.
+     */
+    hits?: IScenePickHit[];
 }
