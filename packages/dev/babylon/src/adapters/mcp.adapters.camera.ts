@@ -1115,6 +1115,8 @@ export class McpCameraAdapter extends McpAdapterBase {
                 type: mesh instanceof InstancedMesh ? "instancedMesh" : "mesh",
                 shapeHint: this._getShapeHint(mesh),
                 distance,
+                // Always present — already computed for the minScreenCoverage filter.
+                screenCoverage: screenCoverage ?? 0,
             };
 
             if (wants("transform")) {
@@ -1143,12 +1145,12 @@ export class McpCameraAdapter extends McpAdapterBase {
                 entry.visibility = {
                     isEnabled: mesh.isEnabled(),
                     isVisible: mesh.isVisible,
-                    isInFrustum: true, // already tested above
+                    isInFrustum: true,
                     visibility: mesh.visibility,
                 };
                 entry.flags = {
                     pickable: mesh.isPickable,
-                    castsShadows: mesh.receiveShadows, // no direct cast getter; use what's available
+                    castsShadows: this._meshCastsShadows(mesh),
                     receivesShadows: mesh.receiveShadows,
                 };
             }
@@ -1163,11 +1165,7 @@ export class McpCameraAdapter extends McpAdapterBase {
 
         // Sort.
         visible.sort((a, b) => {
-            if (sortBy === "screenCoverage") {
-                const ca = a.bounds?.screenCoverage ?? 0;
-                const cb = b.bounds?.screenCoverage ?? 0;
-                return cb - ca; // largest first
-            }
+            if (sortBy === "screenCoverage") return b.screenCoverage - a.screenCoverage; // largest first
             if (sortBy === "name") return a.name.localeCompare(b.name);
             return a.distance - b.distance; // closest first (default)
         });
@@ -1286,6 +1284,21 @@ export class McpCameraAdapter extends McpAdapterBase {
         }
 
         return result;
+    }
+
+    /**
+     * Returns true when the mesh is present in at least one ShadowGenerator's render list.
+     * Babylon.js has no `castsShadows` flag on AbstractMesh — shadow casting is opt-in per
+     * ShadowGenerator via its renderList.
+     */
+    private _meshCastsShadows(mesh: AbstractMesh): boolean {
+        for (const light of this._scene.lights) {
+            const gen = light.getShadowGenerator();
+            if (!gen) continue;
+            const renderList = gen.getShadowMap()?.renderList;
+            if (renderList && renderList.includes(mesh)) return true;
+        }
+        return false;
     }
 
     /** Best-effort shape classification: checks mesh metadata first, then falls back to name keywords. */
