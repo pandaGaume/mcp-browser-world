@@ -130,7 +130,8 @@ export interface IScenePickResult {
     /**
      * All intersections along the ray sorted by distance (closest first).
      * Present only when the allHits option is true.
-     * The first entry mirrors the primary hit fields above.
+     * When hits is present, the top-level hit fields (meshId, pickedPoint, etc.)
+     * are omitted — use hits[0] for the closest entry.
      */
     hits?: IScenePickHit[];
 }

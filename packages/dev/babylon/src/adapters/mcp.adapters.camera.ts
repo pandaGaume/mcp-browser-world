@@ -1253,17 +1253,8 @@ export class McpCameraAdapter extends McpAdapterBase {
                     return hit;
                 });
 
-            const first = hits[0];
-            return {
-                hit: true,
-                meshId: first.meshId,
-                meshName: first.meshName,
-                pickedPoint: first.pickedPoint,
-                distance: first.distance,
-                normal: first.normal,
-                faceId: first.faceId,
-                hits,
-            };
+            // When allHits is true, only the hits array is returned — no top-level duplication.
+            return { hit: true, hits };
         }
 
         // ---- default: single closest hit ----
