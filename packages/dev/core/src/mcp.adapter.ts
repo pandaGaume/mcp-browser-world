@@ -1,4 +1,4 @@
-import { createEventEmitter, IEventEmitter, IEventSource, IMcpBehaviorAdapter, McpResourceContent, McpToolResult } from "./interfaces";
+import { createEventEmitter, IEventEmitter, IEventSource, IMcpBehaviorAdapter, McpResourceContent, McpToolResult, ToolSupport } from "./interfaces";
 
 export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
     private _domain: string;
@@ -40,6 +40,18 @@ export abstract class McpAdapterBase implements IMcpBehaviorAdapter {
 
     protected _forwardResourceContentChanged(uri: string) {
         this._onResourceContentChanged?.emit(uri);
+    }
+
+    /**
+     * Returns the support level for a tool, optionally scoped to a resource type.
+     *
+     * Override in subclasses to declare per-tool or per-resource-type support.
+     * The default implementation returns `undefined` for every tool, which the
+     * behavior interprets as {@link ToolSupport.Full} (all tools assumed fully supported).
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    public getToolSupport(_toolName: string, _resourceType?: string): ToolSupport | undefined {
+        return undefined;
     }
 
     public abstract readResourceAsync(uri: string): Promise<McpResourceContent | undefined>;

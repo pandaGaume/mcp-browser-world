@@ -1,6 +1,30 @@
 import { IEventSource } from "./eventSource";
 import { McpResource, McpResourceContent, McpResourceTemplate, McpTool } from "./mcp.core.interfaces";
 
+// ── Tool Support ─────────────────────────────────────────────────────────────
+
+/**
+ * Declares how well an adapter supports a particular tool.
+ *
+ * Used at two levels:
+ * - **Design-time** — the behavior's `getTools()` filters out `Planned` / `None`
+ *   tools so they are never advertised to MCP clients.
+ * - **Runtime** — `executeToolAsync` can query per-resource-type support to
+ *   return descriptive errors (e.g. "orbit is not supported on GeodeticCamera").
+ */
+export enum ToolSupport {
+    /** The adapter fully implements this tool for all resource types. */
+    Full = "full",
+    /** The adapter implements the tool but with limitations (documented in JSDoc). */
+    Partial = "partial",
+    /** The tool is recognised but not yet implemented — hidden from clients. */
+    Planned = "planned",
+    /** The adapter does not and will not support this tool — hidden from clients. */
+    None = "none",
+}
+
+// ── Tool Result ──────────────────────────────────────────────────────────────
+
 export interface McpToolResult {
     content: McpToolResultContent[];
     isError?: boolean;
@@ -76,6 +100,27 @@ export interface IMcpBehaviorAdapter extends IMcpRuntimeOperations {
     onResourceContentChanged: IEventSource<string>;
     onResourcesChanged: IEventSource<void>;
     domain: string;
+
+    /**
+     * Returns the support level for a tool, optionally scoped to a resource type.
+     *
+     * **Design-time** (no `resourceType`): called by the behavior's `getTools()`
+     * to decide whether the tool should appear in the advertised list.
+     * `Full` / `Partial` → exposed; `Planned` / `None` → hidden.
+     *
+     * **Runtime** (`resourceType` provided): called by `executeToolAsync` to
+     * check if a specific resource instance supports the tool.
+     * Enables adapters to express per-type constraints, e.g.
+     * "orbit is Full for ArcRotateCamera but None for a fixed camera" or
+     * "geographic tools are Full for GeodeticCamera only".
+     *
+     * @param toolName     The tool name, e.g. `"camera_orbit"`.
+     * @param resourceType Optional resource type string chosen by the adapter
+     *                     (e.g. `"ArcRotateCamera"`, `"GeodeticCamera"`).
+     * @returns A {@link ToolSupport} level, or `undefined` to indicate
+     *          {@link ToolSupport.Full} (backwards-compatible default).
+     */
+    getToolSupport?(toolName: string, resourceType?: string): ToolSupport | undefined;
 }
 
 /**

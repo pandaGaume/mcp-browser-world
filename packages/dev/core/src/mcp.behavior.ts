@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { IMcpBehaviorAdapter, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult } from "./interfaces";
+import { IMcpBehaviorAdapter, McpResource, McpResourceContent, McpResourceTemplate, McpTool, McpToolResult, ToolSupport } from "./interfaces";
 import { McpBehaviorBase, McpBehaviorOptions } from "./mcp.behaviorBase";
 
 export abstract class McpBehavior extends McpBehaviorBase {
@@ -35,11 +35,25 @@ export abstract class McpBehavior extends McpBehaviorBase {
         return this._resourceTemplateCache;
     }
 
+    /**
+     * Returns the tool schemas exposed by this behavior, filtered by the
+     * adapter's declared support level.
+     *
+     * Tools where the adapter returns {@link ToolSupport.Planned} or
+     * {@link ToolSupport.None} are excluded from the advertised list.
+     * Tools not in the adapter's support map (returns `undefined`) are
+     * treated as {@link ToolSupport.Full} for backwards compatibility.
+     */
     public override getTools(): McpTool[] {
         if (this._toolsCache) {
             return this._toolsCache;
         }
-        this._toolsCache = this._buildTools();
+        const allTools = this._buildTools();
+        this._toolsCache = allTools.filter((tool) => {
+            const level = this._adapter.getToolSupport?.(tool.name);
+            // undefined → Full (default). Full/Partial → expose. Planned/None → hide.
+            return !level || level === ToolSupport.Full || level === ToolSupport.Partial;
+        });
         return this._toolsCache;
     }
 
