@@ -67,15 +67,7 @@ import {
     Viewer,
 } from "cesium";
 import { JsonRpcMimeType, McpAdapterBase, McpResourceContent, McpToolResult, McpToolResults, ToolSupport } from "@dev/core";
-import {
-    ICameraState,
-    IFrustum,
-    IScenePickHit,
-    IScenePickResult,
-    ISceneVisibleObjectsState,
-    IVisibleObjectState,
-    McpCameraBehavior,
-} from "@dev/behaviors";
+import { ICameraState, IFrustum, IScenePickHit, IScenePickResult, ISceneVisibleObjectsState, IVisibleObjectState, McpCameraBehavior } from "@dev/behaviors";
 import { McpCesiumDomain, McpCameraResourceUriPrefix } from "../mcp.commons";
 
 // ---------------------------------------------------------------------------
@@ -269,9 +261,7 @@ export class McpCameraAdapter extends McpAdapterBase {
             text = JSON.stringify(this._getCameraState());
         }
 
-        return text
-            ? { uri, text, mimeType: JsonRpcMimeType }
-            : undefined;
+        return text ? { uri, text, mimeType: JsonRpcMimeType } : undefined;
     }
 
     // ── executeToolAsync ─────────────────────────────────────────────────
@@ -285,10 +275,7 @@ export class McpCameraAdapter extends McpAdapterBase {
     public async executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult> {
         // CesiumJS has a single camera — validate the URI.
         if (uri !== this._cameraUri) {
-            return McpToolResults.error(
-                `No camera found for URI "${uri}". ` +
-                `CesiumJS has a single camera at "${this._cameraUri}".`
-            );
+            return McpToolResults.error(`No camera found for URI "${uri}". ` + `CesiumJS has a single camera at "${this._cameraUri}".`);
         }
 
         const camera = this._scene.camera;
@@ -312,9 +299,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                 Cartesian3.normalize(direction, direction);
                 camera.direction = direction;
 
-                return McpToolResults.text(
-                    `Camera is now looking at (${target.x.toFixed(1)}, ${target.y.toFixed(1)}, ${target.z.toFixed(1)}).`
-                );
+                return McpToolResults.text(`Camera is now looking at (${target.x.toFixed(1)}, ${target.y.toFixed(1)}, ${target.z.toFixed(1)}).`);
             }
 
             // -----------------------------------------------------------------
@@ -326,9 +311,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                     return this._vec3Error(toolName, "position", args["position"]);
                 }
                 camera.position = this._toCartesian3(position);
-                return McpToolResults.text(
-                    `Camera moved to (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}).`
-                );
+                return McpToolResults.text(`Camera moved to (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}).`);
             }
 
             // -----------------------------------------------------------------
@@ -355,7 +338,7 @@ export class McpCameraAdapter extends McpAdapterBase {
 
                 return McpToolResults.text(
                     `Camera placed at (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)}) ` +
-                    `looking at (${target.x.toFixed(1)}, ${target.y.toFixed(1)}, ${target.z.toFixed(1)}).`
+                        `looking at (${target.x.toFixed(1)}, ${target.y.toFixed(1)}, ${target.z.toFixed(1)}).`
                 );
             }
 
@@ -396,9 +379,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                 Cartesian3.normalize(direction, direction);
                 camera.direction = direction;
 
-                return McpToolResults.text(
-                    `Camera orbited Δα=${(deltaAlpha * RAD_TO_DEG).toFixed(1)}°, Δβ=${(deltaBeta * RAD_TO_DEG).toFixed(1)}°.`
-                );
+                return McpToolResults.text(`Camera orbited Δα=${(deltaAlpha * RAD_TO_DEG).toFixed(1)}°, Δβ=${(deltaBeta * RAD_TO_DEG).toFixed(1)}°.`);
             }
 
             // -----------------------------------------------------------------
@@ -408,14 +389,11 @@ export class McpCameraAdapter extends McpAdapterBase {
                 const fov = args["fov"] as number | undefined;
                 const unit = (args["unit"] as string | undefined) ?? "deg";
                 if (typeof fov !== "number" || !isFinite(fov) || fov <= 0) {
-                    return McpToolResults.error(
-                        `Invalid "fov" for "${toolName}". Expected a positive number, got: ${JSON.stringify(args["fov"])}`
-                    );
+                    return McpToolResults.error(`Invalid "fov" for "${toolName}". Expected a positive number, got: ${JSON.stringify(args["fov"])}`);
                 }
                 if (!(camera.frustum instanceof PerspectiveFrustum)) {
                     return McpToolResults.error(
-                        `Camera is in orthographic mode — setFov only applies to perspective cameras. ` +
-                        `Use "${McpCameraBehavior.CameraSetProjectionFn}" to switch modes first.`
+                        `Camera is in orthographic mode — setFov only applies to perspective cameras. ` + `Use "${McpCameraBehavior.CameraSetProjectionFn}" to switch modes first.`
                     );
                 }
                 const fovRad = unit === "rad" ? fov : fov * DEG_TO_RAD;
@@ -430,30 +408,21 @@ export class McpCameraAdapter extends McpAdapterBase {
             case McpCameraBehavior.CameraZoomFn: {
                 const factor = args["factor"] as number | undefined;
                 if (typeof factor !== "number" || !isFinite(factor) || factor <= 0) {
-                    return McpToolResults.error(
-                        `Invalid "factor" for "${toolName}". Expected a positive number, got: ${JSON.stringify(args["factor"])}`
-                    );
+                    return McpToolResults.error(`Invalid "factor" for "${toolName}". Expected a positive number, got: ${JSON.stringify(args["factor"])}`);
                 }
 
                 if (camera.frustum instanceof PerspectiveFrustum) {
                     // Lens zoom: scale the FOV, clamped to a reasonable range.
                     const currentFov = camera.frustum.fov ?? CesiumMath.toRadians(60);
-                    camera.frustum.fov = Math.max(
-                        1 * DEG_TO_RAD,
-                        Math.min(170 * DEG_TO_RAD, currentFov * factor)
-                    );
-                    return McpToolResults.text(
-                        `Camera zoomed: FOV is now ${((camera.frustum.fov ?? currentFov) * RAD_TO_DEG).toFixed(1)}°.`
-                    );
+                    camera.frustum.fov = Math.max(1 * DEG_TO_RAD, Math.min(170 * DEG_TO_RAD, currentFov * factor));
+                    return McpToolResults.text(`Camera zoomed: FOV is now ${((camera.frustum.fov ?? currentFov) * RAD_TO_DEG).toFixed(1)}°.`);
                 }
 
                 if (camera.frustum instanceof OrthographicFrustum) {
                     // Orthographic zoom: scale the frustum width.
                     const currentWidth = camera.frustum.width ?? 1;
                     camera.frustum.width = currentWidth * factor;
-                    return McpToolResults.text(
-                        `Camera zoomed: orthographic width scaled to ${(camera.frustum.width ?? currentWidth).toFixed(1)}.`
-                    );
+                    return McpToolResults.text(`Camera zoomed: orthographic width scaled to ${(camera.frustum.width ?? currentWidth).toFixed(1)}.`);
                 }
 
                 return McpToolResults.error(`Unsupported frustum type for zoom.`);
@@ -487,9 +456,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                     return McpToolResults.text(`Camera switched to orthographic projection${sizeLabel}.`);
                 }
 
-                return McpToolResults.error(
-                    `Invalid "mode" for "${toolName}". Expected "perspective" or "orthographic", got: ${JSON.stringify(mode)}`
-                );
+                return McpToolResults.error(`Invalid "mode" for "${toolName}". Expected "perspective" or "orthographic", got: ${JSON.stringify(mode)}`);
             }
 
             // -----------------------------------------------------------------
@@ -498,23 +465,15 @@ export class McpCameraAdapter extends McpAdapterBase {
             case McpCameraBehavior.CameraDollyFn: {
                 const distance = args["distance"] as number | undefined;
                 if (typeof distance !== "number" || !isFinite(distance)) {
-                    return McpToolResults.error(
-                        `Invalid "distance" for "${toolName}". Expected a finite number, got: ${JSON.stringify(args["distance"])}`
-                    );
+                    return McpToolResults.error(`Invalid "distance" for "${toolName}". Expected a finite number, got: ${JSON.stringify(args["distance"])}`);
                 }
 
                 // Move along the camera's direction vector (forward = positive).
                 // CesiumJS camera.direction is a unit vector.
-                const moveVector = Cartesian3.multiplyByScalar(
-                    camera.direction,
-                    distance,
-                    new Cartesian3()
-                );
+                const moveVector = Cartesian3.multiplyByScalar(camera.direction, distance, new Cartesian3());
                 camera.position = Cartesian3.add(camera.position, moveVector, new Cartesian3());
 
-                return McpToolResults.text(
-                    `Camera dollied ${distance > 0 ? "in" : "out"} by ${Math.abs(distance).toFixed(3)} metres.`
-                );
+                return McpToolResults.text(`Camera dollied ${distance > 0 ? "in" : "out"} by ${Math.abs(distance).toFixed(3)} metres.`);
             }
 
             // -----------------------------------------------------------------
@@ -523,27 +482,18 @@ export class McpCameraAdapter extends McpAdapterBase {
             case McpCameraBehavior.CameraPanFn: {
                 const deltaX = args["deltaX"] as number | undefined;
                 const deltaY = args["deltaY"] as number | undefined;
-                if (typeof deltaX !== "number" || !isFinite(deltaX) ||
-                    typeof deltaY !== "number" || !isFinite(deltaY)) {
+                if (typeof deltaX !== "number" || !isFinite(deltaX) || typeof deltaY !== "number" || !isFinite(deltaY)) {
                     return McpToolResults.error(
                         `Invalid "deltaX" or "deltaY" for "${toolName}". ` +
-                        `Expected finite numbers, got: deltaX=${JSON.stringify(args["deltaX"])}, deltaY=${JSON.stringify(args["deltaY"])}`
+                            `Expected finite numbers, got: deltaX=${JSON.stringify(args["deltaX"])}, deltaY=${JSON.stringify(args["deltaY"])}`
                     );
                 }
 
                 // Pan along the camera's right and up vectors.
                 // This slides both the camera position and the tracked target.
                 const panOffset = new Cartesian3();
-                Cartesian3.add(
-                    panOffset,
-                    Cartesian3.multiplyByScalar(camera.right, deltaX, new Cartesian3()),
-                    panOffset
-                );
-                Cartesian3.add(
-                    panOffset,
-                    Cartesian3.multiplyByScalar(camera.up, deltaY, new Cartesian3()),
-                    panOffset
-                );
+                Cartesian3.add(panOffset, Cartesian3.multiplyByScalar(camera.right, deltaX, new Cartesian3()), panOffset);
+                Cartesian3.add(panOffset, Cartesian3.multiplyByScalar(camera.up, deltaY, new Cartesian3()), panOffset);
 
                 camera.position = Cartesian3.add(camera.position, panOffset, new Cartesian3());
                 this._target = Cartesian3.add(this._target, panOffset, new Cartesian3());
@@ -585,9 +535,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                     const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
                     return McpToolResults.image(base64, "image/png");
                 } catch (err) {
-                    return McpToolResults.error(
-                        `Snapshot failed: ${err instanceof Error ? err.message : String(err)}`
-                    );
+                    return McpToolResults.error(`Snapshot failed: ${err instanceof Error ? err.message : String(err)}`);
                 }
             }
 
@@ -629,9 +577,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                 }
 
                 // Handle FOV change — apply it at the end since flyTo doesn't animate FOV.
-                const endFov = typeof fovArg === "number" && isFinite(fovArg) && camera.frustum instanceof PerspectiveFrustum
-                    ? fovArg * DEG_TO_RAD
-                    : undefined;
+                const endFov = typeof fovArg === "number" && isFinite(fovArg) && camera.frustum instanceof PerspectiveFrustum ? fovArg * DEG_TO_RAD : undefined;
 
                 return await new Promise<McpToolResult>((resolve) => {
                     camera.flyTo({
@@ -698,10 +644,12 @@ export class McpCameraAdapter extends McpAdapterBase {
             // camera_follow_path
             // -----------------------------------------------------------------
             case McpCameraBehavior.CameraFollowPathFn: {
-                const waypointsArg = args["waypoints"] as Array<{
-                    position?: { x: number; y: number; z: number };
-                    target?: { x: number; y: number; z: number };
-                }> | undefined;
+                const waypointsArg = args["waypoints"] as
+                    | Array<{
+                          position?: { x: number; y: number; z: number };
+                          target?: { x: number; y: number; z: number };
+                      }>
+                    | undefined;
                 const duration = typeof args["duration"] === "number" && args["duration"] > 0 ? args["duration"] : 3;
                 const easingStr = args["easing"] as string | undefined;
 
@@ -791,16 +739,8 @@ export class McpCameraAdapter extends McpAdapterBase {
 
                             // Apply the shake offset along the camera's right and up vectors.
                             const offset = new Cartesian3();
-                            Cartesian3.add(
-                                offset,
-                                Cartesian3.multiplyByScalar(camera.right, dx, new Cartesian3()),
-                                offset
-                            );
-                            Cartesian3.add(
-                                offset,
-                                Cartesian3.multiplyByScalar(camera.up, dy, new Cartesian3()),
-                                offset
-                            );
+                            Cartesian3.add(offset, Cartesian3.multiplyByScalar(camera.right, dx, new Cartesian3()), offset);
+                            Cartesian3.add(offset, Cartesian3.multiplyByScalar(camera.up, dy, new Cartesian3()), offset);
 
                             const shakenDir = Cartesian3.add(baseDir, offset, new Cartesian3());
                             Cartesian3.normalize(shakenDir, shakenDir);
@@ -823,11 +763,7 @@ export class McpCameraAdapter extends McpAdapterBase {
                 this._stopAnimation();
                 // Also cancel any CesiumJS built-in flight (from camera.flyTo).
                 camera.cancelFlight();
-                return McpToolResults.text(
-                    wasRunning
-                        ? `Camera animation stopped.`
-                        : `Camera had no active animation.`
-                );
+                return McpToolResults.text(wasRunning ? `Camera animation stopped.` : `Camera had no active animation.`);
             }
 
             // -----------------------------------------------------------------
@@ -848,9 +784,7 @@ export class McpCameraAdapter extends McpAdapterBase {
             // Unknown
             // -----------------------------------------------------------------
             default: {
-                return McpToolResults.error(
-                    `Unknown tool "${toolName}" for Cesium camera adapter. Available tools: "${ALL_TOOLS}".`
-                );
+                return McpToolResults.error(`Unknown tool "${toolName}" for Cesium camera adapter. Available tools: "${ALL_TOOLS}".`);
             }
         }
     }
@@ -882,8 +816,12 @@ export class McpCameraAdapter extends McpAdapterBase {
         if (!v || typeof v !== "object") return false;
         const o = v as Record<string, unknown>;
         return (
-            typeof o["x"] === "number" && typeof o["y"] === "number" && typeof o["z"] === "number" &&
-            isFinite(o["x"] as number) && isFinite(o["y"] as number) && isFinite(o["z"] as number)
+            typeof o["x"] === "number" &&
+            typeof o["y"] === "number" &&
+            typeof o["z"] === "number" &&
+            isFinite(o["x"] as number) &&
+            isFinite(o["y"] as number) &&
+            isFinite(o["z"] as number)
         );
     }
 
@@ -891,8 +829,8 @@ export class McpCameraAdapter extends McpAdapterBase {
     private _vec3Error(toolName: string, paramName: string, received: unknown): McpToolResult {
         return McpToolResults.error(
             `Invalid "${paramName}" argument for "${toolName}". ` +
-            `Expected an object with finite numeric fields x, y, z (ECEF metres). ` +
-            `Received: ${JSON.stringify(received)}`
+                `Expected an object with finite numeric fields x, y, z (ECEF metres). ` +
+                `Received: ${JSON.stringify(received)}`
         );
     }
 
@@ -970,14 +908,8 @@ export class McpCameraAdapter extends McpAdapterBase {
      */
     private _computeDefaultTarget(): Cartesian3 {
         const camera = this._scene.camera;
-        return Cartesian3.add(
-            camera.position,
-            Cartesian3.multiplyByScalar(camera.direction, DEFAULT_TARGET_DISTANCE, new Cartesian3()),
-            new Cartesian3()
-        );
+        return Cartesian3.add(camera.position, Cartesian3.multiplyByScalar(camera.direction, DEFAULT_TARGET_DISTANCE, new Cartesian3()), new Cartesian3());
     }
-
-
 
     // ── Orbit helper ─────────────────────────────────────────────────────
 
@@ -1025,10 +957,7 @@ export class McpCameraAdapter extends McpAdapterBase {
      * @param direction  The desired forward direction (unit vector).
      * @returns Heading, pitch, roll in radians.
      */
-    private _directionToHeadingPitchRoll(
-        position: Cartesian3,
-        direction: Cartesian3
-    ): { heading: number; pitch: number; roll: number } {
+    private _directionToHeadingPitchRoll(position: Cartesian3, direction: Cartesian3): { heading: number; pitch: number; roll: number } {
         // Build the local East-North-Up frame at the given position.
         const transform = Transforms.eastNorthUpToFixedFrame(position);
         const invTransform = Matrix4.inverse(transform, new Matrix4());
@@ -1146,12 +1075,7 @@ export class McpCameraAdapter extends McpAdapterBase {
      * @param onFrame      Called each frame with the eased normalised time.
      * @param onComplete   Called once when the animation finishes.
      */
-    private _animate(
-        durationSecs: number,
-        easingStr: string | undefined,
-        onFrame: (easedT: number) => void,
-        onComplete?: () => void
-    ): void {
+    private _animate(durationSecs: number, easingStr: string | undefined, onFrame: (easedT: number) => void, onComplete?: () => void): void {
         this._stopAnimation();
         const easingFn = this._mapEasingFunction(easingStr);
         let lastTime: number | null = null;
@@ -1230,9 +1154,7 @@ export class McpCameraAdapter extends McpAdapterBase {
      */
     private _handleSceneVisibleObjects(args: Record<string, unknown>): ISceneVisibleObjectsState {
         const camera = this._scene.camera;
-        const maxObjects = typeof args["maxObjects"] === "number" && args["maxObjects"] > 0
-            ? Math.floor(args["maxObjects"])
-            : 50;
+        const maxObjects = typeof args["maxObjects"] === "number" && args["maxObjects"] > 0 ? Math.floor(args["maxObjects"]) : 50;
 
         const visible: IVisibleObjectState[] = [];
         let filteredOut = 0;
@@ -1291,9 +1213,7 @@ export class McpCameraAdapter extends McpAdapterBase {
             name: this._cameraName,
             position: this._fromCartesian3(camera.position),
             forward: this._fromCartesian3(camera.direction),
-            ...(camera.frustum instanceof PerspectiveFrustum
-                ? { fov: camera.frustum.fov }
-                : {}),
+            ...(camera.frustum instanceof PerspectiveFrustum ? { fov: camera.frustum.fov } : {}),
         };
 
         return {
@@ -1321,10 +1241,7 @@ export class McpCameraAdapter extends McpAdapterBase {
         const normY = typeof spArg?.y === "number" ? spArg.y : 0.5;
         const allHits = args["allHits"] === true;
 
-        const windowPosition = new Cartesian2(
-            normX * canvas.clientWidth,
-            normY * canvas.clientHeight
-        );
+        const windowPosition = new Cartesian2(normX * canvas.clientWidth, normY * canvas.clientHeight);
 
         if (allHits) {
             // drillPick returns all objects at the screen position.
