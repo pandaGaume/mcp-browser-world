@@ -1,37 +1,104 @@
 # MCP for Babylon
 
-A **Model Context Protocol (MCP) server** that runs inside a Babylon.js scene and
-exposes scene objects (meshes, lights, cameras, …) as MCP resources and tools.
+A **Model Context Protocol (MCP)** framework that bridges LLM agents to 3D engines.
+It exposes scene objects (cameras, lights, meshes) as MCP resources and tools,
+letting clients like **Claude Code** or **MCP Inspector** inspect and manipulate
+a live 3D scene through a standard JSON-RPC interface.
 
-This lets LLM clients — **MCP Inspector**, **Claude Code**, and others — inspect and
-manipulate your Babylon.js scene in real time through a standard JSON-RPC interface.
+The framework is engine-agnostic at its core and ships with adapters for
+**Babylon.js** and **CesiumJS**.
+
+> **Vue Spatiale** — this project is part of a broader initiative documented in the
+> [Vue Spatiale book](https://github.com/pandaGaume/vue-spatiale), which covers the
+> vision, concepts, and roadmap behind spatial MCP tooling.
+
+---
+
+## Quick start
+
+```bash
+# 1. Clone & install
+git clone https://github.com/pandaGaume/mcp-for-babylon.git
+cd mcp-for-babylon
+npm install
+
+# 2. Build everything (TypeScript → UMD bundles → deploy)
+npm run build:all:dev
+
+# 3. Start the tunnel server (opens browser automatically)
+npm run server:start
+```
+
+The dev harness opens at `http://localhost:3000/`. Click **Start** to connect
+the browser-side MCP server to the tunnel, then point your MCP client at the
+displayed endpoint.
 
 ---
 
 ## Architecture
 
 ```
-MCP Inspector / Claude Code
-        │
-        │  POST /mcp   (Streamable HTTP, MCP 2025-03-26)
-        │  GET  /sse   (SSE stream,      MCP 2024-11-05)
-        │  POST /messages?sessionId=…
-        ▼
-┌─────────────────────────────┐
-│      WsTunnel (Node.js)     │  packages/dev/tunnel
-│  HTTP + WebSocket relay     │
-└────────────┬────────────────┘
-             │  ws://localhost:3000/provider  (wss:// when TLS is enabled)
-             ▼
-┌─────────────────────────────┐
-│  McpServer (browser page)   │  packages/host/www
-│  Babylon.js dev harness     │
-└─────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        MCP Clients                                   │
+│   Claude Code  ·  MCP Inspector  ·  any MCP-compatible agent         │
+└──────────┬───────────────────────────────────────────────────────────┘
+           │  POST /mcp   (Streamable HTTP, MCP 2025-03-26)
+           │  GET  /sse   (SSE stream,      MCP 2024-11-05)
+           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     WsTunnel  (Node.js)                 @dev/tunnel  │
+│            HTTP / HTTPS relay  ←→  WebSocket bridge                  │
+└──────────┬───────────────────────────────────────────────────────────┘
+           │  ws://localhost:3000/provider  (wss:// with TLS)
+           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                  McpServer  (browser page)                           │
+│                                                                      │
+│  ┌──────────┐  ┌───────────┐  ┌───────────┐                          │
+│  │  Camera  │  │   Light   │  │   Mesh    │   ← Behaviors            │
+│  │ Behavior │  │ Behavior  │  │ Behavior  │     (@dev/behaviors)     │
+│  └────┬─────┘  └─────┬─────┘  └─────┬─────┘                          │
+│       │              │              │                                │
+│  ┌────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐                          │
+│  │ Babylon  │  │  Babylon  │  │  Babylon  │   ← Engine Adapters      │
+│  │ Adapter  │  │  Adapter  │  │  Adapter  │     (@dev/babylon)       │
+│  └──────────┘  └───────────┘  └───────────┘                          │
+│       │              │              │                                │
+│       └──────────────┴──────────────┘                                │
+│                      │                                               │
+│              ┌───────┴────────┐                                      │
+│              │  Babylon.js /  │   ← 3D Engine                        │
+│              │   CesiumJS     │                                      │
+│              └────────────────┘                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-The **browser page** runs an `McpServer` instance (UMD bundles) that registers
-Babylon.js scene objects as MCP resources with callable tools. The **tunnel**
-bridges HTTP/SSE MCP clients to the browser's WebSocket connection.
+### Layered design
+
+| Layer               | Package          | Role                                                                                                                       |
+| ------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **Core**            | `@dev/core`      | Transport-agnostic MCP server SDK: interfaces, base classes, `McpServer`, `McpServerBuilder`, `McpGrammar`                 |
+| **Geodesy**         | `@dev/geodesy`   | Coordinate systems (WGS84, ECEF, ENU), ellipsoids, geographic ↔ Cartesian conversions. Self-contained, no MCP dependency   |
+| **Behaviors**       | `@dev/behaviors` | Engine-agnostic scene behaviors: `McpCameraBehavior`, `McpLightBehavior`, `McpMeshBehavior` with tool/resource definitions |
+| **Babylon adapter** | `@dev/babylon`   | Babylon.js-specific adapters mapping behaviors to `@babylonjs/core` scene objects                                          |
+| **Cesium adapter**  | `@dev/cesium`    | CesiumJS-specific adapters mapping behaviors to the Cesium viewer (ECEF coordinates, `flyTo` animations)                   |
+| **Tunnel**          | `@dev/tunnel`    | Node.js WebSocket/HTTP relay bridging MCP clients to the browser-based `McpServer`                                         |
+
+### Key concepts
+
+| Term                                | Description                                                                                                                           |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Behavior** (`IMcpBehavior`)       | Capability template for a type of object (camera, light, mesh). Defines tools, resources, and URI templates. Registered once per type |
+| **Adapter** (`IMcpBehaviorAdapter`) | Engine-specific implementation that reads scene state and dispatches tool calls                                                       |
+| **Grammar**                         | Serialisable tool descriptions resolved per-session. See [docs/grammar.md](docs/grammar.md)                                           |
+| **Namespace**                       | Short identifier (e.g. `"camera"`) grouping tools and URI templates per behavior type                                                 |
+| **URI template**                    | RFC 6570 pattern (e.g. `babylon://camera/{cameraId}`) advertised via `resources/templates/list`                                       |
+
+### Coordinate system
+
+Coordinates use implicit detection — `{x,y,z}` is Cartesian, `{lat,lon}` is geographic.
+Camera tools accept both formats via `coordinateSchema` (from `@dev/geodesy`).
+The Cesium adapter converts geographic inputs to ECEF via `resolveToCartesian3()`.
 
 ---
 
@@ -39,88 +106,51 @@ bridges HTTP/SSE MCP clients to the browser's WebSocket connection.
 
 | Tool    | Version                            |
 | ------- | ---------------------------------- |
-| Node.js | ≥ 20.11.0 < 23.0.0                 |
-| npm     | ≥ 8.0.0                            |
+| Node.js | >= 20.11.0 < 23.0.0                |
+| npm     | >= 8.0.0                           |
 | Browser | Any modern (Chrome, Edge, Firefox) |
-
-> **MCP Inspector** (optional, for interactive testing):
->
-> ```
-> npx @modelcontextprotocol/inspector
-> ```
-
----
-
-## Installation
-
-Clone and install all workspace dependencies from the repo root:
-
-```bash
-git clone https://github.com/pandaGaume/mcp-for-babylon.git
-cd mcp-for-babylon
-npm install
-```
 
 ---
 
 ## Build
 
-Three steps are required before you can run the project:
-
-### 1 — Compile TypeScript
-
-Compiles all packages (`@dev/core`, `@dev/babylon`, `@dev/tunnel`) to their `dist/` directories:
+### Compile TypeScript
 
 ```bash
-npm run build:dev
+npm run build:dev        # one-shot
+npm run build:watch      # watch mode
 ```
 
-For watch mode (auto-recompile on source changes):
+### UMD browser bundles
+
+Produces webpack bundles for `@dev/core`, `@dev/babylon`, and `@dev/cesium`:
 
 ```bash
-npm run build:watch
-```
-
-### 2 — UMD browser bundles
-
-Produces webpack bundles for both `@dev/core` and `@dev/babylon`:
-
-```bash
-# Production build (minified)
-npm run bundle
-
-# Development build (readable, with source maps)
-npm run bundle:dev
-
-# Watch mode — auto-rebuilds on source changes
-npm run bundle:watch
+npm run bundle           # production (minified)
+npm run bundle:dev       # development (source maps)
+npm run bundle:watch     # watch mode (core only)
 ```
 
 Outputs:
 
 - `packages/dev/core/bundle/mcp-server.js`
 - `packages/dev/babylon/bundle/mcp-babylon.js`
+- `packages/dev/cesium/bundle/mcp-cesium.js`
 
-### 3 — Deploy bundles to the dev harness
-
-Copies all bundle files into `packages/host/www/bundle/`, which is the directory
-served by the tunnel at `/bundle/`:
+### Deploy bundles to dev harness
 
 ```bash
-npm run deploy:bundles
+npm run deploy:bundles   # copies bundles → packages/host/www/bundle/
 ```
 
 ### Build everything at once
 
 ```bash
-# Development (recommended during active work)
-npm run build:all:dev
-
-# Production (minified)
-npm run build:all
+npm run build:all:dev    # development (recommended)
+npm run build:all        # production (minified)
 ```
 
-> **Tip — after changing TypeScript source**, always re-run `npm run build:all:dev`
+> **Tip** — after changing TypeScript source, always re-run `npm run build:all:dev`
 > so the browser picks up your changes.
 
 ---
@@ -131,7 +161,7 @@ npm run build:all
 npm run server:start
 ```
 
-This builds the tunnel and starts it. You will see:
+Output:
 
 ```
 ⚙️  MCP for Babylon — tunnel started
@@ -141,181 +171,31 @@ This builds the tunnel and starts it. You will see:
 📺  MCP SSE      http://localhost:3000/sse   ← Claude Code
 🖥️   Dev harness  http://localhost:3000/
 ────────────────────────────────────────────────────────
-   Press Ctrl+C to stop.
-
-🚀  Opening dev harness: http://localhost:3000/
 ```
 
-The dev harness (`index.html`) opens automatically in your default browser.
-
-> Set `MCP_TUNNEL_NO_OPEN=1` to suppress the automatic browser launch.
+Set `MCP_TUNNEL_NO_OPEN=1` to suppress the automatic browser launch.
 
 ---
 
-## HTTPS / TLS
+## Connecting MCP clients
 
-Some MCP clients require a secure connection (`https://` / `wss://`). The tunnel
-supports TLS natively — no proxy needed.
+### Browser dev harness
 
-### 1 — Generate a self-signed certificate
+1. Open `http://localhost:3000/`
+2. Leave defaults in the **Connection** panel
+3. Click **Start** — status changes to **Connected**
 
-```bash
-npm run gen-cert
-```
-
-This creates `certs/cert.pem` and `certs/key.pem` in the repo root (the `certs/`
-folder is already gitignored). The script prints the exact commands to start the
-server:
-
-```
-✅  Certificate written:
-     cert  →  C:\…\certs\cert.pem
-     key   →  C:\…\certs\key.pem
-
-   Start the tunnel with TLS (PowerShell):
-────────────────────────────────────────────────────────────────
-   $env:MCP_TUNNEL_TLS_CERT="C:\…\certs\cert.pem"
-   $env:MCP_TUNNEL_TLS_KEY="C:\…\certs\key.pem"
-   npm run server:start
-────────────────────────────────────────────────────────────────
-```
-
-### 2 — Start the tunnel with TLS
-
-**PowerShell:**
-
-```powershell
-$env:MCP_TUNNEL_TLS_CERT="certs\cert.pem"
-$env:MCP_TUNNEL_TLS_KEY="certs\key.pem"
-npm run server:start
-```
-
-**Bash / Git Bash:**
-
-```bash
-MCP_TUNNEL_TLS_CERT=certs/cert.pem MCP_TUNNEL_TLS_KEY=certs/key.pem npm run server:start
-```
-
-The startup banner switches to `https://` and `wss://` automatically:
-
-```
-⚙️  MCP for Babylon — multi-provider tunnel started (TLS)
-────────────────────────────────────────────────────────────────
-📡  Provider WebSocket   wss://localhost:3000/provider/<serverName>
-🔌  MCP Inspector (HTTP) https://localhost:3000/<serverName>/mcp
-📺  Claude Code   (SSE)  https://localhost:3000/<serverName>/sse
-```
-
-### 3 — Connect your MCP client over HTTPS
-
-Replace `http://` with `https://` in all client URLs. For Claude Code:
-
-```json
-{
-    "mcpServers": {
-        "babylon": {
-            "url": "https://localhost:3000/<serverName>/sse"
-        }
-    }
-}
-```
-
-> **Self-signed certificate warning** — browsers show an "untrusted certificate"
-> warning the first time you open `https://localhost:3000/`.
-> Click **Advanced → Proceed to localhost**.
-> MCP clients (Claude Code, MCP Inspector) typically skip certificate validation
-> for `localhost` and do not show this warning.
-
-> **Production certificates** — for a real domain, point the env vars at your
-> Let's Encrypt files:
->
-> ```
-> MCP_TUNNEL_TLS_CERT=/etc/letsencrypt/live/example.com/fullchain.pem
-> MCP_TUNNEL_TLS_KEY=/etc/letsencrypt/live/example.com/privkey.pem
-> ```
-
-### Forcing HTTP or HTTPS explicitly
-
-By default the tunnel auto-detects the protocol (HTTPS when cert+key are present,
-HTTP otherwise). Use `MCP_TUNNEL_PROTOCOL` to override this:
-
-```powershell
-npm run server:start:http     # always plain HTTP
-```
-
-```powershell
-npm run server:start:https    # always HTTPS (run gen-cert first)
-```
-
-```powershell
-npm run server:start          # auto-detect (existing behaviour)
-```
-
----
-
-## Connecting the browser provider
-
-1. The browser opens the **dev harness** at `http://localhost:3000/`.
-2. Leave the default values in the **Connection** panel:
-    - **Tunnel provider URL**: `ws://localhost:3000/provider`
-    - **Server name**: `Babylon Dev Scene`
-3. Click **▶ Start**.
-4. The status badge changes to **Connected**.
-
-The harness registers mock behaviors (BoxMesh, SphereMesh, Main Camera).
-The left panel lists all registered resources and tools.
-
----
-
-## Testing with MCP Inspector
-
-[MCP Inspector](https://github.com/modelcontextprotocol/inspector) is the reference
-interactive client for testing MCP servers.
-
-### Start MCP Inspector
+### MCP Inspector
 
 ```bash
 npx @modelcontextprotocol/inspector
 ```
 
-MCP Inspector prints its own URL, e.g.:
+Select **Streamable HTTP** transport, URL: `http://localhost:3000/<serverName>/mcp`.
 
-```
-🚀 MCP Inspector is up and running at: http://localhost:6274/
-```
+### Claude Code
 
-### Connect to the tunnel
-
-1. Open MCP Inspector in your browser.
-2. In the **Transport** dropdown, select **Streamable HTTP**.
-3. Set the URL to (replace `<serverName>` with the name used in the browser page):
-    ```
-    http://localhost:3000/<serverName>/mcp
-    ```
-4. Click **Connect**.
-
-> Make sure the browser dev harness is already connected (status = **Connected**)
-> before clicking Connect in MCP Inspector, otherwise you will receive
-> `-32000 No provider connected`.
-
-### Explore resources and tools
-
-| Tab                       | MCP method                 | What you see                                                             |
-| ------------------------- | -------------------------- | ------------------------------------------------------------------------ |
-| **Resources** → List      | `resources/list`           | `mesh://scene/BoxMesh`, `mesh://scene/SphereMesh`, `camera://scene/main` |
-| **Resources** → Templates | `resources/templates/list` | `mesh://scene/{meshName}`, `camera://scene/{cameraId}`                   |
-| **Resources** → Read      | `resources/read`           | JSON state for a specific mesh or camera                                 |
-| **Tools** → List          | `tools/list`               | mesh tools + camera tools (see below)                                    |
-| **Tools** → Call          | `tools/call`               | Execute a tool on a specific instance via its URI                        |
-
-## Testing with Claude Code
-
-Add the tunnel as an MCP server in your Claude Code settings.
-
-Edit `~/.claude/settings.json` (or open **Settings → MCP Servers**), replacing
-`<serverName>` with the name passed to `McpServerBuilder.withName()` in your page:
-
-### Option A — SSE transport (2024-11-05, recommended for Claude Code)
+Add to `~/.claude/settings.json`:
 
 ```json
 {
@@ -327,34 +207,9 @@ Edit `~/.claude/settings.json` (or open **Settings → MCP Servers**), replacing
 }
 ```
 
-### Option B — Streamable HTTP transport (2025-03-26)
+Replace `<serverName>` with the name passed to `McpServerBuilder.withName()`.
 
-```json
-{
-    "mcpServers": {
-        "babylon": {
-            "url": "http://localhost:3000/<serverName>/mcp"
-        }
-    }
-}
-```
-
-### With HTTPS (TLS enabled)
-
-Replace `http://` with `https://` in both options above:
-
-```json
-{
-    "mcpServers": {
-        "babylon": {
-            "url": "https://localhost:3000/<serverName>/sse"
-        }
-    }
-}
-```
-
-Restart Claude Code, then verify the server appears under `/mcp` or in the
-status bar. You can now ask Claude to inspect or move scene objects:
+Then try:
 
 > "List all the resources available in the Babylon scene."
 > "Move BoxMesh to position (3, 0, -2)."
@@ -362,111 +217,102 @@ status bar. You can now ask Claude to inspect or move scene objects:
 
 ---
 
-## Light tools reference
+## HTTPS / TLS
 
-The `@dev/babylon` package exposes a full set of light management tools.
-All colours use `{ r, g, b }` objects with channels in `[0, 1]`.
-Every tool takes a `uri` argument — either the namespace URI
-(`babylon://light`) for scene-level and create tools, or an instance URI
-(`babylon://light/<name>`) for per-light tools.
+```bash
+# Generate a self-signed certificate
+npm run gen-cert
 
-> **Protected lights** — lights that existed in the Babylon.js scene before the
-> MCP server started cannot be removed via `light_remove`. Only lights created
-> through `light_create` are disposable.
+# Start with TLS (bash)
+MCP_TUNNEL_TLS_CERT=certs/cert.pem MCP_TUNNEL_TLS_KEY=certs/key.pem npm run server:start
 
-### Per-light tools
+# Or use the shortcut
+npm run server:start:https
+```
 
-| Tool                          | Applies to                     | Description                                                                               |
-| ----------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
-| `light_create`                | —                              | Creates a new light (`point`, `directional`, `spot`, `hemispheric`). Returns the new URI. |
-| `light_remove`                | all                            | Removes and disposes a light created by the MCP server.                                   |
-| `light_set_enabled`           | all                            | Enables or disables a light without removing it.                                          |
-| `light_set_intensity`         | all                            | Sets the brightness multiplier (`>= 0`; default 1).                                       |
-| `light_set_diffuse_color`     | all                            | Sets the main emitted colour.                                                             |
-| `light_set_specular_color`    | all                            | Sets the highlight (specular) colour.                                                     |
-| `light_set_position`          | point, spot, directional       | Sets the world-space origin. For directional lights this only affects the shadow frustum. |
-| `light_set_direction`         | directional, spot, hemispheric | Sets the direction vector (normalised internally).                                        |
-| `light_set_target`            | spot, directional              | Aims the light at a world-space point (`direction = normalize(target − position)`).       |
-| `light_set_range`             | point, spot                    | Sets the effective range in world units.                                                  |
-| `light_spot_set_angle`        | spot                           | Sets the cone half-angle in degrees `(0, 90)`.                                            |
-| `light_spot_set_exponent`     | spot                           | Sets the falloff exponent toward the cone axis.                                           |
-| `light_hemi_set_ground_color` | hemispheric                    | Sets the bottom-hemisphere (ground) colour.                                               |
-| `light_update`                | all                            | Batch-patches multiple properties in one call; inapplicable fields are silently ignored.  |
-
-### Scene ambient tools
-
-| Tool                        | Description                                                                |
-| --------------------------- | -------------------------------------------------------------------------- |
-| `scene_get_ambient`         | Returns the current ambient colour and enabled state.                      |
-| `scene_set_ambient_color`   | Sets `scene.ambientColor` (affects all materials using ambient).           |
-| `scene_set_ambient_enabled` | Disables ambient (sets black) or re-enables it (restores previous colour). |
+Replace `http://` with `https://` in all client URLs. See [docs/guides/howto.md](docs/guides/howto.md)
+for more TLS details.
 
 ---
 
-## Camera tools reference
+## Samples
 
-The `@dev/babylon` package exposes a rich set of camera tools. All coordinates
-are world-space, **right-handed, y-axis up**. Every tool requires a `uri`
-argument (e.g. `babylon://camera/MyCamera`) to identify the target camera.
+Ready-to-use sample pages live in `packages/host/www/samples/`:
 
-### Immediate tools
+| Sample            | Engine     | File                  |
+| ----------------- | ---------- | --------------------- |
+| Camera controls   | Babylon.js | `babylon-camera.html` |
+| Light management  | Babylon.js | `babylon-light.html`  |
+| Mesh manipulation | Babylon.js | `babylon-mesh.html`   |
+| Camera + 3D Tiles | CesiumJS   | `cesium-camera.html`  |
 
-| Tool                    | Description                                                               |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `camera_set_target`     | Set the look-at point (`TargetCamera.setTarget`).                         |
-| `camera_set_position`   | Teleport the camera to an absolute world-space position.                  |
-| `camera_look_at`        | Move the camera and set its look-at target in one call.                   |
-| `camera_orbit`          | Rotate around the current target by `deltaAlpha` / `deltaBeta` (degrees). |
-| `camera_set_fov`        | Set the vertical field of view (degrees or radians).                      |
-| `camera_zoom`           | Relative zoom: `factor < 1` zooms in, `factor > 1` zooms out.             |
-| `camera_set_projection` | Switch between `"perspective"` and `"orthographic"` projection.           |
-| `camera_dolly`          | Push/pull the camera along the view axis (affects parallax & DoF).        |
-| `camera_pan`            | Slide the camera and target together perpendicular to the view axis.      |
-| `camera_lock`           | Detach user input — cinematic lock.                                       |
-| `camera_unlock`         | Re-attach user input after a cinematic lock.                              |
-| `camera_snapshot`       | Capture a frame as a base64-encoded PNG (any resolution).                 |
-
-### Animation tools
-
-| Tool                    | Description                                                         |
-| ----------------------- | ------------------------------------------------------------------- |
-| `camera_animate_to`     | Smoothly fly to a new position, target, and/or FOV over time.       |
-| `camera_animate_orbit`  | Smooth orbit sweep; supports continuous `loop` mode.                |
-| `camera_follow_path`    | Move the camera through an ordered sequence of waypoints.           |
-| `camera_shake`          | Procedural trauma shake with intensity, duration, and frequency.    |
-| `camera_stop_animation` | Stop any currently running animation, freezing the camera in place. |
-
-#### Easing format
-
-Animation tools accept an optional `easing` string:
-
-```
-'<type>'          →  e.g. 'sine'           (defaults to inout mode)
-'<type>.<mode>'   →  e.g. 'elastic.out'
-```
-
-**Types:** `linear` | `sine` | `quad` | `cubic` | `circle` | `expo` | `back` | `bounce` | `elastic`
-**Modes:** `in` | `out` | `inout` (default)
+Each sample includes a connection panel, canvas, and console output.
 
 ---
 
-## Environment variables
+## Grammar system
 
-All variables are optional; the defaults work out-of-the-box for a local dev setup.
+Tool descriptions are separated from tool schemas so they can be replaced,
+localised, or tuned per client without touching code. The grammar is a plain
+JSON-serialisable object, resolved per-session during the `initialize` handshake.
 
-| Variable                   | Default                    | Description                                                                    |
-| -------------------------- | -------------------------- | ------------------------------------------------------------------------------ |
-| `MCP_TUNNEL_PORT`          | `3000`                     | TCP port for the tunnel HTTP server                                            |
-| `MCP_TUNNEL_HOST`          | `0.0.0.0`                  | Bind address                                                                   |
-| `MCP_TUNNEL_PROVIDER_PATH` | `/provider`                | WebSocket path for the browser provider                                        |
-| `MCP_TUNNEL_CLIENT_PATH`   | `/`                        | WebSocket path for raw WS MCP clients                                          |
-| `MCP_TUNNEL_MCP_PATH`      | `/mcp`                     | Streamable HTTP endpoint (MCP 2025-03-26)                                      |
-| `MCP_TUNNEL_WWW_DIR`       | `packages/host/www`        | Directory served as the dev harness                                            |
-| `MCP_TUNNEL_BUNDLE_DIR`    | `packages/dev/core/bundle` | Directory served under `/bundle/`                                              |
-| `MCP_TUNNEL_NO_OPEN`       | _(unset)_                  | Set to any value to skip auto-opening browser                                  |
-| `MCP_TUNNEL_TLS_CERT`      | _(unset)_                  | Path to PEM certificate file — enables HTTPS/WSS                               |
-| `MCP_TUNNEL_TLS_KEY`       | _(unset)_                  | Path to PEM private-key file — enables HTTPS/WSS                               |
-| `MCP_TUNNEL_PROTOCOL`      | _(auto)_                   | Force `"http"` or `"https"`. Auto: HTTPS when cert+key are set, HTTP otherwise |
+Full documentation: **[docs/grammar.md](docs/grammar.md)**
+
+---
+
+## MCP transports
+
+| Transport       | Endpoint                                  | Spec               |
+| --------------- | ----------------------------------------- | ------------------ |
+| Streamable HTTP | `POST /<serverName>/mcp`                  | MCP 2025-03-26     |
+| SSE stream      | `GET /<serverName>/sse`                   | MCP 2024-11-05     |
+| SSE messages    | `POST /<serverName>/messages?sessionId=…` | MCP 2024-11-05     |
+| Raw WebSocket   | `ws://localhost:3000/<serverName>`        | Internal / testing |
+
+All transports available over HTTPS/WSS when TLS is configured.
+
+---
+
+## Behaviors
+
+The framework ships with three behaviors, each documented in detail:
+
+| Behavior | Tools | Documentation |
+|----------|-------|---------------|
+| **Camera** | 19 tools — positioning, projection, animation, scene queries | [docs/behaviors/camera.md](docs/behaviors/camera.md) |
+| **Light** | 17 tools — creation, properties, ambient lighting | [docs/behaviors/light.md](docs/behaviors/light.md) |
+| **Mesh** | 13 tools — visibility, transforms, materials, tags | [docs/behaviors/mesh.md](docs/behaviors/mesh.md) |
+
+### Camera tools (summary)
+
+| Category | Tools |
+|----------|-------|
+| Movement | `camera_set_target`, `camera_set_position`, `camera_look_at`, `camera_orbit`, `camera_dolly`, `camera_pan` |
+| Optics | `camera_set_fov`, `camera_zoom`, `camera_set_projection` |
+| Control | `camera_lock`, `camera_unlock` |
+| Capture | `camera_snapshot` |
+| Animation | `camera_animate_to`, `camera_animate_orbit`, `camera_follow_path`, `camera_shake`, `camera_stop_animation` |
+| Scene query | `scene_visible_objects`, `scene_pick_from_center` |
+
+### Light tools (summary)
+
+| Category | Tools |
+|----------|-------|
+| Lifecycle | `light_create`, `light_remove` |
+| Properties | `light_set_enabled`, `light_set_intensity`, `light_set_diffuse_color`, `light_set_specular_color` |
+| Spatial | `light_set_position`, `light_set_direction`, `light_set_target`, `light_set_range` |
+| Type-specific | `light_spot_set_angle`, `light_spot_set_exponent`, `light_hemi_set_ground_color` |
+| Batch | `light_update` |
+| Ambient | `scene_get_ambient`, `scene_set_ambient_color`, `scene_set_ambient_enabled` |
+
+### Mesh tools (summary)
+
+| Category | Tools |
+|----------|-------|
+| Visibility | `mesh_set_enabled`, `mesh_set_visible`, `mesh_set_visibility` |
+| Transform | `mesh_set_position`, `mesh_set_rotation`, `mesh_set_scaling`, `mesh_animate_to` |
+| Material | `mesh_set_color`, `mesh_set_material_alpha` |
+| Tags | `mesh_tag_add`, `mesh_tag_remove`, `mesh_tag_set`, `mesh_find_by_tag` |
 
 ---
 
@@ -476,76 +322,90 @@ All variables are optional; the defaults work out-of-the-box for a local dev set
 mcp-for-babylon/
 ├── packages/
 │   ├── dev/
-│   │   ├── core/           @dev/core — MCP server SDK (TypeScript → UMD)
+│   │   ├── core/           @dev/core — MCP server SDK
 │   │   │   ├── src/
 │   │   │   │   ├── interfaces/       Public TypeScript interfaces
-│   │   │   │   └── server/           McpServer, McpServerBuilder, JSON-RPC helpers
-│   │   │   └── bundle/               webpack output (mcp-server.js)
-│   │   ├── babylon/        @dev/babylon — Babylon.js behaviors & adapters (TypeScript → UMD)
-│   │   │   ├── src/
-│   │   │   │   ├── adapters/         McpCameraAdapter, McpLightAdapter
-│   │   │   │   ├── behaviours/       McpCameraBehavior, McpLightBehavior
-│   │   │   │   └── states/           Camera / light / math state types
-│   │   │   └── bundle/               webpack output (mcp-babylon.js)
-│   │   ├── tunnel/         @dev/tunnel — WebSocket/HTTP relay (Node.js)
+│   │   │   │   └── server/           McpServer, McpServerBuilder, McpGrammar
+│   │   │   └── bundle/               mcp-server.js (UMD)
+│   │   ├── geodesy/        @dev/geodesy — coordinate systems & ellipsoids
 │   │   │   └── src/
-│   │   │       ├── ws.tunnel.ts      WsTunnel class
-│   │   │       ├── ws.tunnel.builder.ts
-│   │   │       └── bin.ts            CLI entry point
-│   │   └── tools/          @dev/tools — shared build utilities
+│   │   │       ├── geodesy.ellipsoid.ts      Ellipsoid (WGS84, GRS80, …)
+│   │   │       ├── geodesy.system.ts         GeodeticSystem (ECEF ↔ geodetic)
+│   │   │       ├── geodesy.schemas.ts        JSON schemas + resolveToCartesian3
+│   │   │       └── calculators/              Spherical & flat-earth calculators
+│   │   ├── behaviors/      @dev/behaviors — engine-agnostic scene behaviors
+│   │   │   └── src/
+│   │   │       ├── behaviours/       McpCameraBehavior, McpLightBehavior, McpMeshBehavior
+│   │   │       └── states/           State interfaces (camera, light, mesh, math)
+│   │   ├── babylon/        @dev/babylon — Babylon.js adapters
+│   │   │   ├── src/adapters/         Camera, Light, Mesh adapters
+│   │   │   └── bundle/               mcp-babylon.js (UMD)
+│   │   ├── cesium/         @dev/cesium — CesiumJS adapters
+│   │   │   ├── src/adapters/         Camera, Light, Mesh adapters (ECEF)
+│   │   │   └── bundle/               mcp-cesium.js (UMD)
+│   │   ├── tunnel/         @dev/tunnel — WebSocket/HTTP relay
+│   │   │   └── src/                  WsTunnel, WsTunnelBuilder, CLI entry
+│   │   └── tools/          @dev/tools — shared build utilities (placeholder)
 │   └── host/
-│       └── www/            Dev harness (plain HTML + UMD bundles)
-│           ├── bundle/     Deployed bundles (output of npm run deploy:bundles)
-│           ├── samples/    Ready-to-use sample scenes (babylon-camera.html, babylon-light.html, …)
-│           ├── templates/  Reusable HTML templates
-│           └── index.html  Browser MCP provider + mock Babylon.js behaviors
+│       └── www/            Dev harness & samples
+│           ├── bundle/     Deployed UMD bundles
+│           ├── samples/    babylon-camera, babylon-light, babylon-mesh, cesium-camera
+│           └── index.html  Browser MCP provider
 ├── scripts/
-│   ├── deploy-bundles.mjs  Copies bundle output into www/bundle/
-│   └── gen-cert.mjs        Generates a self-signed TLS certificate (→ certs/)
+│   ├── deploy-bundles.mjs  Copy bundles → www/bundle/
+│   └── gen-cert.mjs        Generate self-signed TLS certificate
+├── docs/
+│   ├── behaviors/
+│   │   ├── camera.md       Camera behavior — full tool reference
+│   │   ├── light.md        Light behavior — full tool reference
+│   │   └── mesh.md         Mesh behavior — full tool reference
+│   ├── guides/
+│   │   └── howto.md        Tips, recipes & common tasks
+│   └── grammar.md          Grammar system documentation
 └── package.json            Monorepo root (npm workspaces)
 ```
 
-### Key concepts
+---
 
-| Term                                  | Description                                                                                      |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| **Behavior** (`IMcpBehavior<T>`)      | Capability template for a type of object (mesh, light, camera). Registered once per type.        |
-| **Instance** (`IMcpBehaviorInstance`) | Live wrapper around one specific object. Exposes it as a resource + tool executor.               |
-| **Adapter** (`IMcpBehaviorAdapter`)   | Babylon.js-specific implementation that reads scene state and dispatches tool calls.             |
-| **Namespace**                         | Short identifier (e.g. `"camera"`) that groups tools and URI templates per behavior type.        |
-| **URI template**                      | RFC 6570 pattern (e.g. `babylon://camera/{cameraId}`) advertised via `resources/templates/list`. |
-| **`uri` argument**                    | Required tool argument that routes a call to the correct instance (fast path).                   |
+## Environment variables
+
+| Variable                   | Default                    | Description                              |
+| -------------------------- | -------------------------- | ---------------------------------------- |
+| `MCP_TUNNEL_PORT`          | `3000`                     | TCP port                                 |
+| `MCP_TUNNEL_HOST`          | `0.0.0.0`                  | Bind address                             |
+| `MCP_TUNNEL_PROVIDER_PATH` | `/provider`                | WebSocket path for browser provider      |
+| `MCP_TUNNEL_CLIENT_PATH`   | `/`                        | WebSocket path for raw WS clients        |
+| `MCP_TUNNEL_MCP_PATH`      | `/mcp`                     | Streamable HTTP endpoint                 |
+| `MCP_TUNNEL_WWW_DIR`       | `packages/host/www`        | Dev harness directory                    |
+| `MCP_TUNNEL_BUNDLE_DIR`    | `packages/dev/core/bundle` | Bundle directory served under `/bundle/` |
+| `MCP_TUNNEL_NO_OPEN`       | _(unset)_                  | Skip auto-opening browser                |
+| `MCP_TUNNEL_TLS_CERT`      | _(unset)_                  | PEM certificate file path                |
+| `MCP_TUNNEL_TLS_KEY`       | _(unset)_                  | PEM private-key file path                |
+| `MCP_TUNNEL_PROTOCOL`      | _(auto)_                   | Force `"http"` or `"https"`              |
 
 ---
 
-## MCP transports supported
+## npm scripts
 
-| Transport       | Endpoint                                  | Spec               |
-| --------------- | ----------------------------------------- | ------------------ |
-| Streamable HTTP | `POST /<serverName>/mcp`                  | MCP 2025-03-26     |
-| SSE stream      | `GET /<serverName>/sse`                   | MCP 2024-11-05     |
-| SSE messages    | `POST /<serverName>/messages?sessionId=…` | MCP 2024-11-05     |
-| Raw WebSocket   | `ws://localhost:3000/<serverName>`        | Internal / testing |
-
-All transports are available over HTTPS/WSS when `MCP_TUNNEL_TLS_CERT` and
-`MCP_TUNNEL_TLS_KEY` are set (see [HTTPS / TLS](#https--tls)).
+| Script                                | Description                                |
+| ------------------------------------- | ------------------------------------------ |
+| `npm run build:dev`                   | Compile TypeScript                         |
+| `npm run build:watch`                 | Compile in watch mode                      |
+| `npm run bundle` / `bundle:dev`       | Webpack bundles (production / development) |
+| `npm run deploy:bundles`              | Copy bundles to dev harness                |
+| `npm run build:all` / `build:all:dev` | Full build pipeline                        |
+| `npm run server:start`                | Build + start tunnel                       |
+| `npm run server:start:http`           | Force HTTP                                 |
+| `npm run server:start:https`          | Force HTTPS with local certs               |
+| `npm run gen-cert`                    | Generate self-signed TLS certificate       |
 
 ---
 
-## npm scripts reference
+## Further reading
 
-| Script                       | Description                                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| `npm run build:dev`          | Compile all TypeScript packages to `dist/`                                            |
-| `npm run build:watch`        | Compile TypeScript in watch mode                                                      |
-| `npm run bundle`             | Production webpack bundles (core + babylon)                                           |
-| `npm run bundle:dev`         | Development webpack bundles (readable, with source maps)                              |
-| `npm run bundle:watch`       | Watch + auto-rebuild core bundle                                                      |
-| `npm run deploy:bundles`     | Copy bundle files into `packages/host/www/bundle/`                                    |
-| `npm run build:all`          | Full production build: compile + bundle + deploy                                      |
-| `npm run build:all:dev`      | Full development build: compile + bundle:dev + deploy                                 |
-| `npm run server:build`       | Compile tunnel TypeScript                                                             |
-| `npm run server:start`       | Build + start the tunnel (auto: HTTP or HTTPS based on env vars)                      |
-| `npm run server:start:http`  | Build + start the tunnel forced to **HTTP** (ignores any cert env vars)               |
-| `npm run server:start:https` | Build + start the tunnel forced to **HTTPS** using `certs/cert.pem` + `certs/key.pem` |
-| `npm run gen-cert`           | Generate a self-signed TLS certificate into `certs/`                                  |
+- [Camera behavior](docs/behaviors/camera.md) — 19 tools for camera control, animation, and scene queries
+- [Light behavior](docs/behaviors/light.md) — 17 tools for light management and ambient lighting
+- [Mesh behavior](docs/behaviors/mesh.md) — 13 tools for mesh visibility, transforms, materials, and tags
+- [Grammar system](docs/grammar.md) — how tool descriptions are resolved per-session
+- [HOWTO](docs/guides/howto.md) — tips, recipes, and common tasks
+- [Vue Spatiale book](https://github.com/pandaGaume/vue-spatiale) — vision and roadmap
