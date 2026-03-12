@@ -158,3 +158,19 @@ export interface IMcpServer {
 
     unregister(...behavior: IMcpBehavior[]): IMcpServer;
 }
+
+/**
+ * Lets any object embbed mcp servers.
+ */
+export interface IHasMcpServers {
+    McpServer: IMcpServer[];
+}
+
+/**
+ * type guard.
+ * @param value teh object to test
+ * @returns true if the object seems to implement the interface.
+ */
+export function isHasMcpServers(value: unknown): value is IHasMcpServers {
+    return typeof value === "object" && value !== null && "McpServer" in value && Array.isArray((value as { McpServer: unknown }).McpServer);
+}
