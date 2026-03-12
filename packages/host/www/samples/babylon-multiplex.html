@@ -3,7 +3,7 @@
     <head>
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>MCP Babylon — Multiplex Robots</title>
+        <title>MCP Babylon — Multiplex Rovers</title>
         <link rel="stylesheet" href="css/sample.css" />
         <style>
             /* Viewport labels overlaid on the canvas */
@@ -79,7 +79,7 @@
     </head>
     <body>
         <header>
-            <h1 id="page-title">MCP Babylon — Multiplex Robots</h1>
+            <h1 id="page-title">MCP Babylon — Multiplex Rovers</h1>
             <span id="status-badge" class="badge disconnected">Disconnected</span>
         </header>
 
@@ -125,8 +125,9 @@
             </div>
         </div>
 
-        <!-- Babylon.js core (CDN) -->
+        <!-- Babylon.js core + loaders (CDN) -->
         <script src="https://cdn.babylonjs.com/babylon.js"></script>
+        <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 
         <!-- MCP bundles -->
         <script src="/bundle/mcp-core.js"></script>
@@ -211,61 +212,62 @@
             ];
 
             /**
-             * Builds a simple robot mesh: a body box, a head sphere, and two
-             * arm boxes. Returns the root transform node.
+             * Loads a rover GLB model, tints it with the given color, and
+             * places it at the specified position. Returns the root transform node.
              */
-            function buildRobot(name, pos, color, scene) {
+            async function buildRobot(name, pos, color, scene) {
+                const result = await BABYLON.SceneLoader.ImportMeshAsync(
+                    "",
+                    "/3dmodels/",
+                    "mars_rover_low_poly_rover.glb",
+                    scene,
+                );
+
+                // Wrap everything under a named root node
                 const root = new BABYLON.TransformNode(name, scene);
                 root.position = pos;
 
-                const mat = new BABYLON.StandardMaterial(name + "_mat", scene);
-                mat.diffuseColor = color;
-                mat.specularColor = color.scale(0.3);
+                // Re-parent all root-level meshes/transform nodes from the import
+                for (const m of result.meshes) {
+                    if (!m.parent || m.parent === scene) {
+                        m.parent = root;
+                    }
+                }
 
-                // Body
-                const body = BABYLON.MeshBuilder.CreateBox(name + "_body", { width: 1, height: 1.4, depth: 0.6 }, scene);
-                body.position.y = 1.7;
-                body.material = mat;
-                body.parent = root;
+                // Auto-scale so the rover is ~2 units tall (fitting the 20×20 scene)
+                const bounds = root.getHierarchyBoundingVectors(true);
+                const size = bounds.max.subtract(bounds.min);
+                const maxDim = Math.max(size.x, size.y, size.z);
+                if (maxDim > 0) {
+                    const desiredSize = 2;
+                    root.scaling.setAll(desiredSize / maxDim);
+                }
 
-                // Head
-                const head = BABYLON.MeshBuilder.CreateSphere(name + "_head", { diameter: 0.7, segments: 12 }, scene);
-                head.position.y = 2.85;
-                head.material = mat;
-                head.parent = root;
-
-                // Left arm
-                const lArm = BABYLON.MeshBuilder.CreateBox(name + "_armL", { width: 0.3, height: 1.0, depth: 0.3 }, scene);
-                lArm.position.set(-0.65, 1.7, 0);
-                lArm.material = mat;
-                lArm.parent = root;
-
-                // Right arm
-                const rArm = BABYLON.MeshBuilder.CreateBox(name + "_armR", { width: 0.3, height: 1.0, depth: 0.3 }, scene);
-                rArm.position.set(0.65, 1.7, 0);
-                rArm.material = mat;
-                rArm.parent = root;
-
-                // Legs
-                const lLeg = BABYLON.MeshBuilder.CreateBox(name + "_legL", { width: 0.35, height: 1.0, depth: 0.35 }, scene);
-                lLeg.position.set(-0.25, 0.5, 0);
-                lLeg.material = mat;
-                lLeg.parent = root;
-
-                const rLeg = BABYLON.MeshBuilder.CreateBox(name + "_legR", { width: 0.35, height: 1.0, depth: 0.35 }, scene);
-                rLeg.position.set(0.25, 0.5, 0);
-                rLeg.material = mat;
-                rLeg.parent = root;
+                // Apply color tint to every mesh material
+                for (const m of result.meshes) {
+                    if (m.material) {
+                        // Clone the material so each rover gets its own tinted copy
+                        const cloned = m.material.clone(name + "_" + m.material.name);
+                        if (cloned.albedoColor) {
+                            // PBR material — multiply the albedo by the tint
+                            cloned.albedoColor = BABYLON.Color3.Lerp(cloned.albedoColor, color, 0.4);
+                        } else if (cloned.diffuseColor) {
+                            // Standard material
+                            cloned.diffuseColor = BABYLON.Color3.Lerp(cloned.diffuseColor, color, 0.4);
+                        }
+                        m.material = cloned;
+                    }
+                }
 
                 return root;
             }
 
             /**
-             * Creates a TargetCamera for a robot, positioned behind and above
-             * it, looking at the robot's head.
+             * Creates an ArcRotateCamera for a rover, positioned behind and
+             * above it, looking at the rover's centre.
              */
             function createRobotCamera(name, robotPos, vp, scene) {
-                const target = robotPos.add(new BABYLON.Vector3(0, 2, 0));
+                const target = robotPos.add(new BABYLON.Vector3(0, 1, 0));
                 const camPos = robotPos.add(new BABYLON.Vector3(0, 4, -6));
 
                 const cam = new BABYLON.ArcRotateCamera(
@@ -334,16 +336,24 @@
 
             createScene(scene);
 
-            // Build robots and their cameras
-            const robots = ROBOT_DEFS.map((def, i) => {
-                const mesh = buildRobot(def.name, def.pos, def.color, scene);
-                const cam = createRobotCamera(def.name, def.pos, VIEWPORTS[i], scene);
-                log(`${def.name}: pos (${def.pos.x}, ${def.pos.y}, ${def.pos.z}), camera "${cam.name}"`, "dim");
-                return new Robot(def.name, mesh, cam);
-            });
+            // Build robots and their cameras (async — GLB loading)
+            let robots = [];
 
-            // Activate all cameras (multi-viewport rendering)
-            scene.activeCameras = robots.map((r) => r.camera);
+            async function buildAllRobots() {
+                log("Loading rover models\u2026", "dim");
+                robots = [];
+                for (let i = 0; i < ROBOT_DEFS.length; i++) {
+                    const def = ROBOT_DEFS[i];
+                    const mesh = await buildRobot(def.name, def.pos, def.color, scene);
+                    const cam = createRobotCamera(def.name, def.pos, VIEWPORTS[i], scene);
+                    log(`${def.name}: pos (${def.pos.x}, ${def.pos.y}, ${def.pos.z}), camera "${cam.name}"`, "dim");
+                    robots.push(new Robot(def.name, mesh, cam));
+                }
+
+                // Activate all cameras (multi-viewport rendering)
+                scene.activeCameras = robots.map((r) => r.camera);
+                log(`${robots.length} rovers loaded.`, "ok");
+            }
 
             // ── Viewport-aware camera input ──────────────────────────
             // Only the camera whose viewport quadrant contains the
@@ -381,8 +391,15 @@
                 }
             });
 
-            engine.runRenderLoop(() => scene.render());
             window.addEventListener("resize", () => engine.resize());
+
+            // Kick off async model loading, then start the render loop
+            buildAllRobots().then(() => {
+                engine.runRenderLoop(() => scene.render());
+                log("Ready. Press \u25b6 Start to connect all 4 rovers via multiplex.", "dim");
+            }).catch((err) => {
+                log(`Failed to load rover models: ${err}`, "error");
+            });
 
             // =========================================================
             // MCP server lifecycle — one server per robot, multiplexed
@@ -397,7 +414,7 @@
                 const endpointListEl = document.getElementById("endpoint-list");
                 endpointListEl.innerHTML = "";
 
-                log(`Connecting ${robots.length} robots via multiplex to ${wsUrl} \u2026`, "dim");
+                log(`Connecting ${robots.length} rovers via multiplex to ${wsUrl} \u2026`, "dim");
                 setStatus("connecting");
 
                 try {
@@ -418,9 +435,9 @@
                                         protocolVersion: "2024-11-05",
                                         serverInfo: { name: robot.name, version: "1.0.0" },
                                         instructions:
-                                            `You are connected to ${robot.name}'s camera in a multi-robot scene. ` +
+                                            `You are connected to ${robot.name}'s camera in a multi-rover scene. ` +
                                             "ALWAYS use MCP tools and resources \u2014 do NOT write or suggest any code. " +
-                                            `\n\nSCENE: 4 robots (robot_1..robot_4) on a dark ground plane with obstacles. ` +
+                                            `\n\nSCENE: 4 Mars rovers (robot_1..robot_4) on a dark ground plane with obstacles. ` +
                                             `This server controls ONLY ${robot.name}'s camera. ` +
                                             `\n\nCAMERA RESOURCES: Read 'babylon://camera' to list cameras, ` +
                                             `read 'babylon://camera/{cameraId}' for full state. ` +
@@ -467,7 +484,7 @@
                     }
 
                     setStatus("connected");
-                    log(`All ${robots.length} robots connected via a single WebSocket.`, "ok");
+                    log(`All ${robots.length} rovers connected via a single WebSocket.`, "ok");
 
                     document.getElementById("start-btn").disabled = true;
                     document.getElementById("stop-btn").disabled = false;
@@ -496,7 +513,7 @@
                 log("All servers stopped.", "warn");
             });
 
-            log("Ready. Press \u25b6 Start to connect all 4 robots via multiplex.", "dim");
+            log("Loading rover models\u2026 please wait.", "dim");
         </script>
     </body>
 </html>
