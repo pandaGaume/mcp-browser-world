@@ -100,8 +100,16 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
     /** Tracks per-camera active animation observers so they can be cancelled on demand. */
     private _activeAnimations = new Map<string, Observer<Scene>>();
 
-    /** Composable filter manager for camera snapshots. */
-    public readonly imageFiltering: IImageFilterSet = new ImageFilterSet();
+    /** Composable filter manager for camera snapshots (lazy-initialized). */
+    private _imageFiltering: IImageFilterSet | undefined;
+
+    /** Composable filter manager for camera snapshots. Created on first access so the adapter works even when `@dev/filters` is not loaded. */
+    public get imageFiltering(): IImageFilterSet {
+        if (!this._imageFiltering) {
+            this._imageFiltering = new ImageFilterSet();
+        }
+        return this._imageFiltering;
+    }
 
     public constructor(scene?: Scene, cameras?: Camera | Camera[]) {
         super(McpBabylonDomain);
@@ -877,7 +885,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
     /** Removes all BJS observables and clears the event emitters inherited from {@link McpAdapterBase}. */
     public override dispose(): void {
         this._stopAllAnimations();
-        this.imageFiltering.dispose();
+        this._imageFiltering?.dispose();
         super.dispose();
         this._observers.forEach((observer) => {
             observer?.remove();

@@ -10,6 +10,10 @@ import { IWorkerSnapshotFilter } from "./interfaces";
  */
 export class GrayscaleSnapshotFilter implements IWorkerSnapshotFilter {
     public readonly name = "grayscale";
+    public readonly description =
+        "Converts the image to grayscale using the ITU-R BT.601 luminance formula " +
+        "(0.299 R + 0.587 G + 0.114 B). Useful for removing colour distractions " +
+        "and focusing on shape, contrast, and lighting.";
 
     public readonly workerParams = {};
 

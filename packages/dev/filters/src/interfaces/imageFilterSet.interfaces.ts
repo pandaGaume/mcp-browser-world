@@ -23,6 +23,12 @@ export interface IImageFilterSet {
     readonly filterNames: string[];
 
     /**
+     * Returns name + description for every registered filter.
+     * Filters without a description get an empty string.
+     */
+    getFilterDescriptions(): ReadonlyArray<{ name: string; description: string }>;
+
+    /**
      * Runs the snapshot filter pipeline on raw pixel data.
      *
      * @param imageData    Raw RGBA pixel buffer from the engine capture.

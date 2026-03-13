@@ -21,10 +21,10 @@ camera_snapshot tool
   ┌──────────────────────────────────────────┐
   │  imageFiltering.applyFiltersAsync()      │
   │                                          │
-  │   ISnapshotFilter[]  (registration order)│
-  │     ├── worker-eligible batch ──► Worker  │
+  │  ISnapshotFilter[]  (registration order) │
+  │     ├── worker-eligible batch ──► Worker │
   │     ├── main-thread filter               │
-  │     └── worker-eligible batch ──► Worker  │
+  │     └── worker-eligible batch ──► Worker │
   └──────────────────────────────────────────┘
     │
     ▼
@@ -81,10 +81,10 @@ interface IWorkerSnapshotFilter extends ISnapshotFilter {
 }
 ```
 
-| Property       | Description |
-| -------------- | ----------- |
+| Property       | Description                                                                                                                                      |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `workerFn`     | Self-contained function body as a string. Receives `data` (`Uint8ClampedArray`), `width`, `height`, and `params`. Returns a `Uint8ClampedArray`. |
-| `workerParams` | Serializable object forwarded to `params` inside the Worker. |
+| `workerParams` | Serializable object forwarded to `params` inside the Worker.                                                                                     |
 
 The `apply()` method is retained as a **main-thread fallback** when the Worker
 cannot be created (e.g. CSP blocks blob URLs).
@@ -200,8 +200,10 @@ export class SepiaFilter implements ISnapshotFilter {
     apply(imageData: ImageData): ImageData {
         const d = imageData.data;
         for (let i = 0; i < d.length; i += 4) {
-            const r = d[i], g = d[i + 1], b = d[i + 2];
-            d[i]     = Math.min(255, 0.393 * r + 0.769 * g + 0.189 * b);
+            const r = d[i],
+                g = d[i + 1],
+                b = d[i + 2];
+            d[i] = Math.min(255, 0.393 * r + 0.769 * g + 0.189 * b);
             d[i + 1] = Math.min(255, 0.349 * r + 0.686 * g + 0.168 * b);
             d[i + 2] = Math.min(255, 0.272 * r + 0.534 * g + 0.131 * b);
         }
@@ -242,23 +244,23 @@ export class InvertFilter implements IWorkerSnapshotFilter {
 
 ### Rules for `workerFn`
 
-| Rule | Reason |
-| ---- | ------ |
-| No closures or imports | The string is compiled with `new Function()` inside the Worker. |
-| Use `var` / `function` declarations | Arrow functions and `let`/`const` work in modern browsers but `var` is safest for the `new Function` scope. |
-| Access parameters via `params` | Constructor values arrive through `workerParams → params`. |
-| Return `data` (or a new `Uint8ClampedArray`) | The Worker posts the returned buffer back to the main thread. |
+| Rule                                         | Reason                                                                                                      |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| No closures or imports                       | The string is compiled with `new Function()` inside the Worker.                                             |
+| Use `var` / `function` declarations          | Arrow functions and `let`/`const` work in modern browsers but `var` is safest for the `new Function` scope. |
+| Access parameters via `params`               | Constructor values arrive through `workerParams → params`.                                                  |
+| Return `data` (or a new `Uint8ClampedArray`) | The Worker posts the returned buffer back to the main thread.                                               |
 
 ---
 
 ## Error Handling
 
-| Scenario | Behaviour |
-| -------- | --------- |
-| Unknown filter name | `applyFiltersAsync` throws with the list of unknown names. |
-| Worker creation fails (CSP) | `SnapshotFilterWorkerPool.unavailable` becomes `true`; all filters fall back to `apply()`. |
-| Runtime error inside Worker | The promise rejects with the stringified error. |
-| Pool disposed during pending request | All pending promises reject with a disposal error. |
+| Scenario                             | Behaviour                                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------------------------ |
+| Unknown filter name                  | `applyFiltersAsync` throws with the list of unknown names.                                 |
+| Worker creation fails (CSP)          | `SnapshotFilterWorkerPool.unavailable` becomes `true`; all filters fall back to `apply()`. |
+| Runtime error inside Worker          | The promise rejects with the stringified error.                                            |
+| Pool disposed during pending request | All pending promises reject with a disposal error.                                         |
 
 ---
 

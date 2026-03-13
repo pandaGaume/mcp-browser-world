@@ -18,14 +18,22 @@ import { ISnapshotFilter } from "./interfaces";
  */
 export class SnapshotFilterPipeline implements ISnapshotFilter {
     public readonly name: string;
+    public readonly description?: string;
     private readonly _filters: ISnapshotFilter[];
 
-    constructor(name: string, ...filters: ISnapshotFilter[]) {
-        if (filters.length === 0) {
+    constructor(name: string, ...filters: ISnapshotFilter[]);
+    constructor(name: string, description: string, ...filters: ISnapshotFilter[]);
+    constructor(name: string, descriptionOrFilter: string | ISnapshotFilter, ...rest: ISnapshotFilter[]) {
+        if (typeof descriptionOrFilter === "string") {
+            this.description = descriptionOrFilter;
+            this._filters = rest;
+        } else {
+            this._filters = descriptionOrFilter ? [descriptionOrFilter, ...rest] : rest;
+        }
+        if (this._filters.length === 0) {
             throw new Error("SnapshotFilterPipeline requires at least one filter.");
         }
         this.name = name;
-        this._filters = filters;
     }
 
     public async apply(imageData: ImageData, context?: Record<string, unknown>): Promise<ImageData> {

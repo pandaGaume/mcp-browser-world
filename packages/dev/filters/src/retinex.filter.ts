@@ -17,6 +17,11 @@ import { IWorkerSnapshotFilter } from "./interfaces";
  */
 export class RetinexSnapshotFilter implements IWorkerSnapshotFilter {
     public readonly name = "retinex";
+    public readonly description =
+        "Single-Scale Retinex (SSR) — enhances local contrast and recovers detail " +
+        "in shadows and highlights by separating reflectance from illumination. " +
+        "Controlled by a sigma parameter (default 80): smaller values emphasise fine detail, " +
+        "larger values preserve global contrast.";
     private readonly _sigma: number;
 
     /**

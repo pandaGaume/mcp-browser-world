@@ -1,4 +1,5 @@
-import { IMcpBehaviorAdapter, JsonRpcMimeType, McpBehavior, McpBehaviorOptions, McpResource, McpResourceTemplate, McpTool } from "@dev/core";
+import { IMcpBehaviorAdapter, JsonRpcMimeType, McpBehavior, McpBehaviorOptions, McpResource, McpResourceTemplate, McpTool, McpToolResult, McpToolResults } from "@dev/core";
+import { isHasImageFiltering } from "@dev/filters";
 import { coordinateSchema } from "@dev/geodesy";
 import { McpCameraNamespace } from "../mcp.commons";
 
@@ -72,6 +73,9 @@ export class McpCameraBehavior extends McpBehavior {
     /** Casts a ray from the camera through a screen point and returns the first mesh hit. */
     public static readonly ScenePickFromCenterFn = "scene_pick_from_center";
 
+    /** Lists all registered snapshot filters with their descriptions. */
+    public static readonly CameraListFiltersFn = "camera_list_filters";
+
     // -------------------------------------------------------------------------
 
     public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions = {}) {
@@ -80,6 +84,19 @@ export class McpCameraBehavior extends McpBehavior {
             domain: options.domain ?? adapter.domain,
             namespace: options.namespace ?? McpCameraNamespace,
         });
+    }
+
+    public override async executeToolAsync(uri: string, toolName: string, args: Record<string, unknown>): Promise<McpToolResult> {
+        if (toolName === McpCameraBehavior.CameraListFiltersFn && isHasImageFiltering(this.adapter)) {
+            const descriptions = this.adapter.imageFiltering.getFilterDescriptions();
+            return McpToolResults.json({
+                filters: descriptions.map((f) => ({
+                    name: f.name,
+                    description: this._resolvePropertyDescription(McpCameraBehavior.CameraListFiltersFn, f.name, f.description),
+                })),
+            });
+        }
+        return super.executeToolAsync(uri, toolName, args);
     }
 
     protected override _buildTools(): McpTool[] {
@@ -864,6 +881,33 @@ export class McpCameraBehavior extends McpBehavior {
                     additionalProperties: false,
                 },
             },
+
+            // -----------------------------------------------------------------
+            // camera.listFilters — discover available snapshot filters
+            // -----------------------------------------------------------------
+            ...(isHasImageFiltering(this.adapter)
+                ? [
+                      {
+                          name: McpCameraBehavior.CameraListFiltersFn,
+                          description: this._resolveToolDescription(
+                              McpCameraBehavior.CameraListFiltersFn,
+                              "Lists all snapshot filters registered on the camera adapter, with their names and descriptions. " +
+                                  "Use the returned names in the 'filters' parameter of camera_snapshot to select which filters to apply."
+                          ),
+                          inputSchema: {
+                              type: "object" as const,
+                              properties: {
+                                  uri: {
+                                      type: "string",
+                                      description: this._resolvePropertyDescription(McpCameraBehavior.CameraListFiltersFn, "uri", "Camera URI"),
+                                  },
+                              },
+                              required: ["uri"] as string[],
+                              additionalProperties: false,
+                          },
+                      },
+                  ]
+                : []),
         ];
     }
 

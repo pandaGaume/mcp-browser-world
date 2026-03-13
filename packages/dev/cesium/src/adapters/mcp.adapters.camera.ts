@@ -145,8 +145,16 @@ const ALL_TOOLS = [
 export class McpCameraAdapter extends McpAdapterBase implements IHasImageFiltering {
     // ── State ────────────────────────────────────────────────────────────
 
-    /** Composable filter manager for camera snapshots. */
-    public readonly imageFiltering: IImageFilterSet = new ImageFilterSet();
+    /** Composable filter manager for camera snapshots (lazy-initialized). */
+    private _imageFiltering: IImageFilterSet | undefined;
+
+    /** Composable filter manager for camera snapshots. Created on first access so the adapter works even when `@dev/filters` is not loaded. */
+    public get imageFiltering(): IImageFilterSet {
+        if (!this._imageFiltering) {
+            this._imageFiltering = new ImageFilterSet();
+        }
+        return this._imageFiltering;
+    }
 
     /** The CesiumJS Viewer instance that owns the scene and camera. */
     private _viewer: Viewer;
@@ -235,7 +243,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
     /** Stops any running animation and cleans up event emitters. */
     public override dispose(): void {
         this._stopAnimation();
-        this.imageFiltering.dispose();
+        this._imageFiltering?.dispose();
         super.dispose();
     }
 

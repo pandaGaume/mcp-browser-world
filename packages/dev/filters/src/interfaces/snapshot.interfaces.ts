@@ -14,6 +14,13 @@ export interface ISnapshotFilter {
     readonly name: string;
 
     /**
+     * Human-readable description of what this filter does.
+     * Exposed by the `camera_list_filters` tool so an LLM can decide which
+     * filters to apply.  Supports grammar overrides like any other description.
+     */
+    readonly description?: string;
+
+    /**
      * Transforms an image captured from a camera snapshot.
      *
      * @param imageData  Raw RGBA pixel buffer (width × height × 4 bytes).

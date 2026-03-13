@@ -38,13 +38,13 @@ export class ImageFilterSet implements IImageFilterSet {
         return this._filters.map((f) => f.name);
     }
 
+    public getFilterDescriptions(): ReadonlyArray<{ name: string; description: string }> {
+        return this._filters.map((f) => ({ name: f.name, description: f.description ?? "" }));
+    }
+
     // ── Execution ─────────────────────────────────────────────────────────
 
-    public async applyFiltersAsync(
-        imageData: ImageData,
-        filterNames?: string[],
-        context?: Record<string, unknown>,
-    ): Promise<ImageData> {
+    public async applyFiltersAsync(imageData: ImageData, filterNames?: string[], context?: Record<string, unknown>): Promise<ImageData> {
         // Empty array → caller explicitly wants raw capture.
         if (filterNames !== undefined && filterNames.length === 0) {
             return imageData;

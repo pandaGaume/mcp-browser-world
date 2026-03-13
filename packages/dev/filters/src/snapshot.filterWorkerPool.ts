@@ -95,10 +95,7 @@ export class SnapshotFilterWorkerPool {
 
         return new Promise<ImageData>((resolve, reject) => {
             this._pending.set(id, { resolve, reject });
-            worker.postMessage(
-                { id, filters: filterDescs, width: imageData.width, height: imageData.height, data },
-                [data.buffer],
-            );
+            worker.postMessage({ id, filters: filterDescs, width: imageData.width, height: imageData.height, data }, [data.buffer]);
         });
     }
 
