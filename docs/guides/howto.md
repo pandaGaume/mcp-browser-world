@@ -1,6 +1,6 @@
 # HOWTO — Tips & Recipes
 
-Practical guidance for common tasks with the MCP for Babylon framework.
+Practical guidance for common tasks with the MCP Browser World framework.
 
 ---
 

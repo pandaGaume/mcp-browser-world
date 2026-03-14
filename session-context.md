@@ -1,4 +1,4 @@
-# MCP-for-Babylon Session Context — 2026-03-10
+# MCP Browser World Session Context — 2026-03-10
 
 ## What Was Done This Session
 

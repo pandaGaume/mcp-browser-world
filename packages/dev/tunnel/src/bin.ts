@@ -145,7 +145,7 @@ async function main(): Promise<void> {
     const sseSuffix = ssePath.replace(/^\//, "");
 
     console.log();
-    console.log(`⚙️  MCP for Babylon — multi-provider tunnel started${useTls ? " (TLS)" : ""}`);
+    console.log(`⚙️  MCP Browser World — tunnel started${useTls ? " (TLS)" : ""}`);
     console.log(hr);
     console.log(`📡  Provider WebSocket   ${wsScheme}://localhost:${port}${providerPath}/<serverName>`);
     console.log(`🔌  MCP Inspector (HTTP) ${localhost}/<serverName>/${mcpSuffix}`);

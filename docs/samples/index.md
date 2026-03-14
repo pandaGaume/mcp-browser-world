@@ -3,7 +3,7 @@
 The sample pages live in `packages/host/www/samples/` and are served by the
 tunnel dev-server (`npm run server:start`). Each sample is a self-contained
 HTML file that loads the UMD bundles and demonstrates a specific aspect of the
-MCP for Babylon framework.
+MCP Browser World framework.
 
 ---
 

@@ -1,12 +1,12 @@
 {
-  "name": "@mcpbabylon/root",
+  "name": "@mcp-browser-world/root",
   "version": "0.1.0",
   "description": "",
   "type": "module",
   "main": "dist/index.js",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pandaGaume/mcp-for-babylon.git"
+    "url": "git+https://github.com/pandaGaume/mcp-browser-world.git"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",

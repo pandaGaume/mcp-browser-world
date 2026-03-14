@@ -165,7 +165,7 @@ npm run server:start
 Output:
 
 ```
-⚙️  MCP for Babylon — tunnel started
+⚙️  MCP Browser World — tunnel started
 ────────────────────────────────────────────────────────
 📡  Provider     ws://localhost:3000/provider
 🔌  MCP HTTP     http://localhost:3000/mcp   ← MCP Inspector
