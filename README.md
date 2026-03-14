@@ -59,12 +59,12 @@ displayed endpoint.
 │  │ Behavior │  │ Behavior  │  │ Behavior  │     (@dev/behaviors)     │
 │  └────┬─────┘  └─────┬─────┘  └─────┬─────┘                          │
 │       │              │              │                                │
-│  ┌────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐                          │
-│  │ Babylon  │  │  Babylon  │  │  Babylon  │   ← Engine Adapters      │
-│  │ Adapter  │  │  Adapter  │  │  Adapter  │     (@dev/babylon)       │
-│  └──────────┘  └───────────┘  └───────────┘                          │
-│       │              │              │                                │
-│       └──────────────┴──────────────┘                                │
+│  ┌────┴─────┐  ┌─────┴─────┐  ┌─────┴─────┐  ┌───────────┐          │
+│  │ Babylon  │  │  Babylon  │  │  Babylon  │  │  Filters  │ optional │
+│  │ Adapter  │  │  Adapter  │  │  Adapter  │  │ Pipeline  │ @dev/    │
+│  └──────────┘  └───────────┘  └───────────┘  │ (Workers) │ filters  │
+│       │              │              │         └─────┬─────┘          │
+│       └──────────────┴──────────────┴───────────────┘                │
 │                      │                                               │
 │              ┌───────┴────────┐                                      │
 │              │  Babylon.js /  │   ← 3D Engine                        │
@@ -82,6 +82,7 @@ displayed endpoint.
 | **Behaviors**       | `@dev/behaviors` | Engine-agnostic scene behaviors: `McpCameraBehavior`, `McpLightBehavior`, `McpMeshBehavior` with tool/resource definitions |
 | **Babylon adapter** | `@dev/babylon`   | Babylon.js-specific adapters mapping behaviors to `@babylonjs/core` scene objects                                          |
 | **Cesium adapter**  | `@dev/cesium`    | CesiumJS-specific adapters mapping behaviors to the Cesium viewer (ECEF coordinates, `flyTo` animations)                   |
+| **Filters**         | `@dev/filters`   | Post-capture image filters for snapshots (grayscale, retinex, …). Worker-eligible filters run off-thread automatically     |
 | **Tunnel**          | `@dev/tunnel`    | Node.js WebSocket/HTTP relay bridging MCP clients to the browser-based `McpServer`                                         |
 
 ### Key concepts
@@ -239,12 +240,14 @@ for more TLS details.
 
 Ready-to-use sample pages live in `packages/host/www/samples/`:
 
-| Sample            | Engine     | File                  |
-| ----------------- | ---------- | --------------------- |
-| Camera controls   | Babylon.js | `babylon-camera.html` |
-| Light management  | Babylon.js | `babylon-light.html`  |
-| Mesh manipulation | Babylon.js | `babylon-mesh.html`   |
-| Camera + 3D Tiles | CesiumJS   | `cesium-camera.html`  |
+| Sample                  | Engine     | File                      |
+| ----------------------- | ---------- | ------------------------- |
+| Camera controls         | Babylon.js | `babylon-camera.html`     |
+| Light management        | Babylon.js | `babylon-light.html`      |
+| Mesh manipulation       | Babylon.js | `babylon-mesh.html`       |
+| Multiplex (4 viewports) | Babylon.js | `babylon-multiplex.html`  |
+| Loopback client         | Babylon.js | `babylon-client.html`     |
+| Camera + 3D Tiles       | CesiumJS   | `cesium-camera.html`      |
 
 Each sample includes a connection panel, canvas, and console output.
 
@@ -257,6 +260,34 @@ localised, or tuned per client without touching code. The grammar is a plain
 JSON-serialisable object, resolved per-session during the `initialize` handshake.
 
 Full documentation: **[docs/grammar.md](docs/grammar.md)**
+
+---
+
+## Snapshot filters
+
+The `@dev/filters` package provides post-capture image filters applied to
+`camera_snapshot` results before PNG encoding. Filters implement
+`ISnapshotFilter` and are registered on camera adapters via the
+`IHasImageFiltering` interface.
+
+The `camera_snapshot` tool accepts an optional `filters` parameter:
+
+| Value               | Behaviour                                    |
+| ------------------- | -------------------------------------------- |
+| _(omitted)_         | Raw capture, no filters applied              |
+| `[]`                | Skip all filters (same as omitted)           |
+| `["retinex", ...]`  | Apply only the named filters, in order       |
+
+Use `camera_list_filters` to discover registered filters at runtime.
+
+Worker-eligible filters (those implementing `IWorkerSnapshotFilter`) are
+automatically batched and executed off the main thread for better performance.
+
+Built-in filters: **grayscale**, **retinex** (multi-scale retinex with colour restoration).
+
+![Loopback client — camera snapshot with retinex filter](docs/images/babylon-client-filters.png)
+
+Full documentation: **[docs/filters/architecture.md](docs/filters/architecture.md)**
 
 ---
 
@@ -279,7 +310,7 @@ The framework ships with three behaviors, each documented in detail:
 
 | Behavior | Tools | Documentation |
 |----------|-------|---------------|
-| **Camera** | 19 tools — positioning, projection, animation, scene queries | [docs/behaviors/camera.md](docs/behaviors/camera.md) |
+| **Camera** | 20 tools — positioning, projection, animation, snapshot filtering, scene queries | [docs/behaviors/camera.md](docs/behaviors/camera.md) |
 | **Light** | 17 tools — creation, properties, ambient lighting | [docs/behaviors/light.md](docs/behaviors/light.md) |
 | **Mesh** | 13 tools — visibility, transforms, materials, tags | [docs/behaviors/mesh.md](docs/behaviors/mesh.md) |
 
@@ -290,7 +321,7 @@ The framework ships with three behaviors, each documented in detail:
 | Movement | `camera_set_target`, `camera_set_position`, `camera_look_at`, `camera_orbit`, `camera_dolly`, `camera_pan` |
 | Optics | `camera_set_fov`, `camera_zoom`, `camera_set_projection` |
 | Control | `camera_lock`, `camera_unlock` |
-| Capture | `camera_snapshot` |
+| Capture | `camera_snapshot` (accepts optional `filters` array), `camera_list_filters` |
 | Animation | `camera_animate_to`, `camera_animate_orbit`, `camera_follow_path`, `camera_shake`, `camera_stop_animation` |
 | Scene query | `scene_visible_objects`, `scene_pick_from_center` |
 
@@ -343,6 +374,12 @@ mcp-for-babylon/
 │   │   ├── cesium/         @dev/cesium — CesiumJS adapters
 │   │   │   ├── src/adapters/         Camera, Light, Mesh adapters (ECEF)
 │   │   │   └── bundle/               mcp-cesium.js (UMD)
+│   │   ├── filters/        @dev/filters — snapshot image filters
+│   │   │   └── src/
+│   │   │       ├── interfaces/       ISnapshotFilter, IImageFilterSet, IHasImageFiltering
+│   │   │       ├── imageFilterSet.ts Default implementation (worker batching)
+│   │   │       ├── grayscale.filter.ts   Built-in: grayscale (worker-eligible)
+│   │   │       └── retinex.filter.ts     Built-in: retinex  (worker-eligible)
 │   │   ├── tunnel/         @dev/tunnel — WebSocket/HTTP relay
 │   │   │   └── src/                  WsTunnel, WsTunnelBuilder, CLI entry
 │   │   └── tools/          @dev/tools — shared build utilities (placeholder)
@@ -359,6 +396,8 @@ mcp-for-babylon/
 │   │   ├── camera.md       Camera behavior — full tool reference
 │   │   ├── light.md        Light behavior — full tool reference
 │   │   └── mesh.md         Mesh behavior — full tool reference
+│   ├── filters/
+│   │   └── architecture.md Filter pipeline architecture & custom filters
 │   ├── guides/
 │   │   └── howto.md        Tips, recipes & common tasks
 │   └── grammar.md          Grammar system documentation
@@ -403,9 +442,10 @@ mcp-for-babylon/
 
 ## Further reading
 
-- [Camera behavior](docs/behaviors/camera.md) — 19 tools for camera control, animation, and scene queries
+- [Camera behavior](docs/behaviors/camera.md) — 20 tools for camera control, animation, snapshot filtering, and scene queries
 - [Light behavior](docs/behaviors/light.md) — 17 tools for light management and ambient lighting
 - [Mesh behavior](docs/behaviors/mesh.md) — 13 tools for mesh visibility, transforms, materials, and tags
 - [Grammar system](docs/grammar.md) — how tool descriptions are resolved per-session
+- [Snapshot filters](docs/filters/architecture.md) — filter pipeline architecture, worker protocol, custom filters
 - [HOWTO](docs/guides/howto.md) — tips, recipes, and common tasks
 - [Vue Spatiale book](https://github.com/pandaGaume/vue-spatiale) — vision and roadmap
