@@ -45,6 +45,7 @@ import {
     VisibleObjectSortBy,
     downsampleDepthGrid,
     encodeDepthGrid,
+    ILidarResult,
 } from "@dev/behaviors";
 import { GeodeticSystem } from "@dev/geodesy";
 import { McpBabylonDomain, McpCameraResourceUriPrefix } from "../mcp.commons";
@@ -475,6 +476,8 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
             case McpCameraBehavior.CameraSnapshotFn: {
                 const sizeArg = args["size"] as { width?: number; height?: number; precision?: number } | undefined;
                 const rawFilters = args["filters"];
+                const includeDepth = (args["depth"] as boolean | undefined) ?? false;
+                const lidarOpts = args["lidarOptions"] as { beams?: number; angularResolution?: number; encoding?: "uint16" | "float32"; maxRange?: number } | undefined;
                 // Omitted → empty array (raw capture, no filters).
                 // Callers must explicitly name the filters they want.
                 const filterNames: string[] = rawFilters === undefined
@@ -508,7 +511,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
 
                     const rtt = new RenderTargetTexture("_mcp_snapshot", { width: w, height: h }, this._scene, false);
                     rtt.activeCamera = camera;
-                    // Include all meshes — renderList defaults to [] which renders nothing.
+                    // null renderList = render the entire scene (engine handles culling).
                     rtt.renderList = null;
                     rtt.render(true);
 
@@ -551,7 +554,12 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                             ? await this.imageFiltering.applyFiltersAsync(imageData, imageFilterNames, ctx)
                             : imageData;
                         const text = await this.imageFiltering.applyAsTextAsync(filtered, textFilterEntry.name, ctx);
-                        return McpToolResults.text(text);
+                        const content: McpToolResult["content"] = [{ type: "text", text }];
+                        if (includeDepth) {
+                            const lidar = await this._readLidarAsync(camera, lidarOpts?.beams ?? 16, lidarOpts?.angularResolution ?? 1.0, lidarOpts?.encoding ?? "uint16", lidarOpts?.maxRange ?? 100);
+                            content.push({ type: "text", text: JSON.stringify(lidar) });
+                        }
+                        return { content };
                     }
 
                     // Run the snapshot filter pipeline on raw pixels.
@@ -559,7 +567,12 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
 
                     // Single base64 encode at the very end.
                     const base64 = await this.imageFiltering.imageDataToBase64(filtered);
-                    return McpToolResults.image(base64, "image/png");
+                    const content: McpToolResult["content"] = [{ type: "image", data: base64, mimeType: "image/png" }];
+                    if (includeDepth) {
+                        const lidar = await this._readLidarAsync(camera, lidarOpts?.beams ?? 16, lidarOpts?.angularResolution ?? 1.0, lidarOpts?.encoding ?? "uint16", lidarOpts?.maxRange ?? 100);
+                        content.push({ type: "text", text: JSON.stringify(lidar) });
+                    }
+                    return { content };
                 } catch (err) {
                     return McpToolResults.error(`Snapshot failed for camera "${camera.name}": ${err instanceof Error ? err.message : String(err)}`);
                 }
@@ -575,71 +588,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                 const maxRange = (args["maxRange"] as number | undefined) ?? 100;
 
                 try {
-                    const engine = this._scene.getEngine();
-
-                    // Compute horizontal FOV in degrees.
-                    // camera.fov is the vertical FOV in radians for perspective cameras.
-                    const vFovRad = camera.fov;
-                    const aspectRatio = engine.getAspectRatio(camera);
-                    const hFovDeg = 2 * Math.atan(Math.tan(vFovRad / 2) * aspectRatio) * RAD_TO_DEG;
-
-                    const cols = Math.max(1, Math.floor(hFovDeg / angularResolution));
-                    const rows = beams;
-
-                    // Enable depth renderer (lazy, one per camera).
-                    // The depth renderer hooks into the scene's render loop and
-                    // automatically populates its depth map when the scene renders.
-                    const depthRenderer = this._scene.enableDepthRenderer(camera);
-
-                    // The DepthRenderer constructor fires _initShaderSourceAsync()
-                    // without awaiting it, so the depth shaders are loaded via
-                    // dynamic import on the microtask queue.  We must yield once
-                    // to let those imports resolve, then wait for the full scene
-                    // (including render-target readiness) before rendering.
-                    await new Promise<void>((resolve) => setTimeout(resolve, 0));
-                    await this._scene.whenReadyAsync(true);
-
-                    // Force a full scene render to populate the depth texture.
-                    this._scene.render();
-
-                    // Read depth pixels (normalized [0, 1]).
-                    const rawDepth = await depthRenderer.getDepthMap().readPixels();
-                    if (!rawDepth) {
-                        return McpToolResults.error(`Lidar failed for camera "${camera.name}": readPixels returned null.`);
-                    }
-
-                    // The depth map is a single-channel float texture but readPixels
-                    // returns RGBA (4 floats per pixel). Extract the R channel.
-                    const depthW = depthRenderer.getDepthMap().getRenderWidth();
-                    const depthH = depthRenderer.getDepthMap().getRenderHeight();
-                    const pixelCount = depthW * depthH;
-                    const rawArr = rawDepth instanceof Float32Array ? rawDepth : new Float32Array(rawDepth.buffer, rawDepth.byteOffset, rawDepth.byteLength);
-
-                    // Determine if data is packed RGBA (4 components) or single-channel.
-                    const stride = rawArr.length / pixelCount;
-                    const depthBuffer = new Float32Array(pixelCount);
-
-                    if (stride >= 4) {
-                        // RGBA: depth in R channel
-                        for (let i = 0; i < pixelCount; i++) {
-                            depthBuffer[i] = rawArr[i * stride];
-                        }
-                    } else {
-                        depthBuffer.set(rawArr.subarray(0, pixelCount));
-                    }
-
-                    // Flip vertically (WebGL reads bottom-to-top).
-                    const flipped = new Float32Array(pixelCount);
-                    for (let y = 0; y < depthH; y++) {
-                        flipped.set(depthBuffer.subarray((depthH - 1 - y) * depthW, (depthH - y) * depthW), y * depthW);
-                    }
-
-                    // Downsample and encode.
-                    const near = camera.minZ;
-                    const far = camera.maxZ;
-                    const grid = downsampleDepthGrid(flipped, depthW, depthH, cols, rows, near, far);
-                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding, maxRange);
-
+                    const result = await this._readLidarAsync(camera, beams, angularResolution, encoding, maxRange);
                     return McpToolResults.json(result);
                 } catch (err) {
                     return McpToolResults.error(`Lidar failed for camera "${camera.name}": ${err instanceof Error ? err.message : String(err)}`);
@@ -1033,6 +982,62 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
         const uri = this._buildUriForCamera(eventData);
         this._indexedCameras.delete(uri);
         this._forwardResourceChanged();
+    }
+
+    /**
+     * Reads the depth buffer and produces a lidar result for the given camera.
+     * Shared by `camera_lidar` and `camera_snapshot` (when `depth: true`).
+     */
+    private async _readLidarAsync(
+        camera: Camera,
+        beams: number,
+        angularResolution: number,
+        encoding: "uint16" | "float32",
+        maxRange: number,
+    ): Promise<ILidarResult> {
+        const engine = this._scene.getEngine();
+        const vFovRad = camera.fov;
+        const aspectRatio = engine.getAspectRatio(camera);
+        const hFovDeg = 2 * Math.atan(Math.tan(vFovRad / 2) * aspectRatio) * RAD_TO_DEG;
+
+        const cols = Math.max(1, Math.floor(hFovDeg / angularResolution));
+        const rows = beams;
+
+        const depthRenderer = this._scene.enableDepthRenderer(camera);
+        await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        await this._scene.whenReadyAsync(true);
+        this._scene.render();
+
+        const rawDepth = await depthRenderer.getDepthMap().readPixels();
+        if (!rawDepth) {
+            throw new Error("readPixels returned null");
+        }
+
+        const depthW = depthRenderer.getDepthMap().getRenderWidth();
+        const depthH = depthRenderer.getDepthMap().getRenderHeight();
+        const pixelCount = depthW * depthH;
+        const rawArr = rawDepth instanceof Float32Array ? rawDepth : new Float32Array(rawDepth.buffer, rawDepth.byteOffset, rawDepth.byteLength);
+
+        const stride = rawArr.length / pixelCount;
+        const depthBuffer = new Float32Array(pixelCount);
+
+        if (stride >= 4) {
+            for (let i = 0; i < pixelCount; i++) {
+                depthBuffer[i] = rawArr[i * stride];
+            }
+        } else {
+            depthBuffer.set(rawArr.subarray(0, pixelCount));
+        }
+
+        const flipped = new Float32Array(pixelCount);
+        for (let y = 0; y < depthH; y++) {
+            flipped.set(depthBuffer.subarray((depthH - 1 - y) * depthW, (depthH - y) * depthW), y * depthW);
+        }
+
+        const near = camera.minZ;
+        const far = camera.maxZ;
+        const grid = downsampleDepthGrid(flipped, depthW, depthH, cols, rows, near, far);
+        return encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding, maxRange);
     }
 
     /**

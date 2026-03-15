@@ -558,7 +558,7 @@
             // MCP imports from UMD globals
             // =========================================================
             const { McpServerBuilder, LoopbackTransport, McpClient } = window.McpServer;
-            const { RetinexSnapshotFilter, GrayscaleSnapshotFilter } = window.McpFilters;
+            const { RetinexSnapshotFilter, GrayscaleSnapshotFilter, AsciiSnapshotFilter } = window.McpFilters;
             const { McpCameraAdapter, McpCameraBehavior } = window.McpBabylon;
 
             // =========================================================
@@ -1139,9 +1139,12 @@
 
                         // Check if the result contains an image content item.
                         const imageItem = result.content?.find((c) => c.type === "image");
+                        // Check for companion depth/text items alongside the image (RGBD).
+                        const textItems = result.content?.filter((c) => c.type === "text") || [];
+
                         if (imageItem) {
                             log(`Image result: mimeType=${imageItem.mimeType}, data.length=${imageItem.data?.length}, prefix=${imageItem.data?.substring(0,40)}`, "dim");
-                            // Tabbed view: Image | Base64
+                            // Tabbed view: Image | Base64 | (Depth if present)
                             const tabs = document.createElement("div");
                             tabs.className = "tool-result-tabs";
 
@@ -1156,6 +1159,8 @@
                             tabs.appendChild(tabImage);
                             tabs.appendChild(tabBase64);
 
+                            const panes = [];
+
                             const imagePane = document.createElement("div");
                             imagePane.className = "tool-result-image";
                             const img = document.createElement("img");
@@ -1163,29 +1168,58 @@
                             img.onerror = (e) => log(`Image decode error: ${e}`, "error");
                             img.src = `data:${imageItem.mimeType};base64,${imageItem.data}`;
                             imagePane.appendChild(img);
+                            panes.push(imagePane);
 
                             const base64Pane = document.createElement("pre");
                             base64Pane.className = "tool-result-base64";
                             base64Pane.textContent = imageItem.data;
                             base64Pane.style.display = "none";
+                            panes.push(base64Pane);
 
-                            tabImage.addEventListener("click", () => {
-                                tabImage.classList.add("active");
-                                tabBase64.classList.remove("active");
-                                imagePane.style.display = "";
-                                base64Pane.style.display = "none";
-                            });
-                            tabBase64.addEventListener("click", () => {
-                                tabBase64.classList.add("active");
-                                tabImage.classList.remove("active");
-                                base64Pane.style.display = "";
-                                imagePane.style.display = "none";
-                            });
+                            // Add a Depth tab for each companion text item (RGBD support).
+                            const depthPanes = [];
+                            for (let ti = 0; ti < textItems.length; ti++) {
+                                const tabDepth = document.createElement("div");
+                                tabDepth.className = "tool-result-tab";
+                                tabDepth.textContent = textItems.length === 1 ? "Depth" : `Depth ${ti + 1}`;
+                                tabs.appendChild(tabDepth);
+
+                                const depthPane = document.createElement("pre");
+                                depthPane.className = "tool-result-base64";
+                                depthPane.style.display = "none";
+                                try {
+                                    depthPane.textContent = JSON.stringify(JSON.parse(textItems[ti].text), null, 2);
+                                } catch {
+                                    depthPane.textContent = textItems[ti].text;
+                                }
+                                depthPanes.push({ tab: tabDepth, pane: depthPane });
+                                panes.push(depthPane);
+                            }
+
+                            // Tab switching — collect all tabs and panes.
+                            const allTabs = [tabImage, tabBase64, ...depthPanes.map((d) => d.tab)];
+                            const allPanes = panes;
+                            const activateTab = (idx) => {
+                                allTabs.forEach((t, i) => t.classList.toggle("active", i === idx));
+                                allPanes.forEach((p, i) => (p.style.display = i === idx ? "" : "none"));
+                            };
+                            allTabs.forEach((t, i) => t.addEventListener("click", () => activateTab(i)));
 
                             div.innerHTML = `<div class="tool-result-label">Result</div>`;
                             div.appendChild(tabs);
-                            div.appendChild(imagePane);
-                            div.appendChild(base64Pane);
+                            for (const p of allPanes) div.appendChild(p);
+                        } else if (textItems.length > 0) {
+                            // Text-only result (e.g. ASCII filter or plain lidar JSON).
+                            div.innerHTML = `<div class="tool-result-label">Result</div>`;
+                            for (const ti of textItems) {
+                                const pre = document.createElement("pre");
+                                try {
+                                    pre.textContent = JSON.stringify(JSON.parse(ti.text), null, 2);
+                                } catch {
+                                    pre.textContent = ti.text;
+                                }
+                                div.appendChild(pre);
+                            }
                         } else {
                             div.innerHTML =
                                 `<div class="tool-result-label">Result</div>` +
@@ -1240,6 +1274,7 @@
                     robot.adapter = new McpCameraAdapter(scene, cam);
                     robot.adapter.imageFiltering.registerFilter(new RetinexSnapshotFilter(20));
                     robot.adapter.imageFiltering.registerFilter(new GrayscaleSnapshotFilter());
+                    robot.adapter.imageFiltering.registerFilter(new AsciiSnapshotFilter());
                     robot.behavior = new McpCameraBehavior(robot.adapter);
                     robots.push(robot);
                 }

@@ -510,6 +510,45 @@ export class McpCameraBehavior extends McpBehavior {
                                 "Filter names to apply after capture. Omit to run all registered filters. " + "Pass an empty array to skip all filters (raw capture)."
                             ),
                         },
+                        depth: {
+                            type: "boolean",
+                            description: this._resolvePropertyDescription(
+                                McpCameraBehavior.CameraSnapshotFn,
+                                "depth",
+                                "If true, appends a companion lidar depth grid to the response (RGBD). " +
+                                    "Configure resolution via 'lidarOptions'. Defaults to false."
+                            ),
+                        },
+                        lidarOptions: {
+                            type: "object",
+                            description: this._resolvePropertyDescription(
+                                McpCameraBehavior.CameraSnapshotFn,
+                                "lidarOptions",
+                                "Options for the companion depth grid when 'depth' is true. " +
+                                    "All fields are optional and fall back to camera_lidar defaults."
+                            ),
+                            properties: {
+                                beams: {
+                                    type: "number",
+                                    enum: [16, 32, 64, 128],
+                                    description: "Number of vertical channels (rows). Defaults to 16.",
+                                },
+                                angularResolution: {
+                                    type: "number",
+                                    description: "Horizontal angular step in degrees. Defaults to 1.0.",
+                                },
+                                encoding: {
+                                    type: "string",
+                                    enum: ["uint16", "float32"],
+                                    description: "Depth encoding: 'uint16' (mm) or 'float32' (m). Defaults to 'uint16'.",
+                                },
+                                maxRange: {
+                                    type: "number",
+                                    description: "Maximum lidar range in meters. Out-of-range = 0. Defaults to 100.",
+                                },
+                            },
+                            additionalProperties: false,
+                        },
                     },
                     required: ["uri"],
                     additionalProperties: false,

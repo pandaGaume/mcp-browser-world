@@ -9,6 +9,7 @@
  * Sources     : packages/dev/core/bundle/
  *               packages/dev/babylon/bundle/
  *               packages/dev/cesium/bundle/
+ *               packages/dev/filters/bundle/
  *
  * Usage
  *   node scripts/deploy-bundles.mjs
@@ -29,6 +30,7 @@ const SOURCES = [
     resolve(__root, "packages/dev/core/bundle"),
     resolve(__root, "packages/dev/babylon/bundle"),
     resolve(__root, "packages/dev/cesium/bundle"),
+    resolve(__root, "packages/dev/filters/bundle"),
 ];
 
 // ── helpers ─────────────────────────────────────────────────────────────────
