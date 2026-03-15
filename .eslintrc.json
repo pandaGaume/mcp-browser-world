@@ -11,7 +11,8 @@
             "./packages/dev/behaviors/tsconfig.build.json",
             "./packages/dev/babylon/tsconfig.build.json",
             "./packages/dev/cesium/tsconfig.build.json",
-            "./packages/dev/tunnel/tsconfig.build.json"
+            "./packages/dev/tunnel/tsconfig.build.json",
+            "./packages/dev/grpc/tsconfig.build.json"
         ]
     },
     "plugins": ["@typescript-eslint", "prettier"],

@@ -5,6 +5,7 @@ import * as nodePath from "path";
 import { randomUUID } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
 import { WebSocket, WebSocketServer } from "ws";
+import { GrpcUpstream, type GrpcUpstreamConfig } from "./grpc.upstream.js";
 
 // ---------------------------------------------------------------------------
 // Static-file helpers
@@ -12,17 +13,17 @@ import { WebSocket, WebSocketServer } from "ws";
 
 /** Maps file extensions to their HTTP Content-Type values. */
 const MIME: Readonly<Record<string, string>> = {
-    ".html":  "text/html; charset=utf-8",
-    ".js":    "application/javascript; charset=utf-8",
-    ".mjs":   "application/javascript; charset=utf-8",
-    ".css":   "text/css; charset=utf-8",
-    ".json":  "application/json; charset=utf-8",
-    ".map":   "application/json; charset=utf-8",
-    ".svg":   "image/svg+xml",
-    ".png":   "image/png",
-    ".ico":   "image/x-icon",
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".mjs": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".map": "application/json; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
     ".woff2": "font/woff2",
-    ".woff":  "font/woff",
+    ".woff": "font/woff",
 };
 
 // ---------------------------------------------------------------------------
@@ -34,10 +35,7 @@ const MIME: Readonly<Record<string, string>> = {
  * Either a WebSocket socket (raw WS client), an SSE session (legacy MCP/HTTP),
  * or a held-open HTTP response (Streamable HTTP transport, MCP 2025-03-26).
  */
-type ResponseSink =
-    | { type: "ws";   socket: WebSocket }
-    | { type: "sse";  sessionId: string }
-    | { type: "http"; res: ServerResponse };
+type ResponseSink = { type: "ws"; socket: WebSocket } | { type: "sse"; sessionId: string } | { type: "http"; res: ServerResponse };
 
 /**
  * All mutable state for one named provider slot.
@@ -145,6 +143,14 @@ export interface WsTunnelOptions {
     staticMounts?: StaticMount[];
 
     /**
+     * gRPC upstream backends. Each entry registers a named backend that the
+     * tunnel connects to via bidirectional gRPC streaming. Browser clients
+     * reach these backends using composite provider names: `"<backend>/<provider>"`.
+     * @default undefined — no gRPC backends
+     */
+    grpcUpstreams?: GrpcUpstreamConfig[];
+
+    /**
      * TLS configuration. When provided, the server uses HTTPS and WSS instead of HTTP and WS.
      * Both `cert` and `key` must be PEM-encoded strings (file contents, not file paths).
      * Use {@link WsTunnelBuilder.withTlsFiles} to load from disk paths.
@@ -198,6 +204,9 @@ export class WsTunnel {
     /** Maps a multiplexed WebSocket to the set of provider names it feeds. */
     private readonly _multiplexSockets = new Map<WebSocket, Set<string>>();
 
+    /** gRPC upstream backends, keyed by backend name. */
+    private readonly _grpcUpstreams = new Map<string, GrpcUpstream>();
+
     constructor(options: WsTunnelOptions) {
         this._options = options;
     }
@@ -206,7 +215,9 @@ export class WsTunnel {
     // Public state
     // -------------------------------------------------------------------------
 
-    get isListening(): boolean { return this._httpServer?.listening ?? false; }
+    get isListening(): boolean {
+        return this._httpServer?.listening ?? false;
+    }
 
     /** Total number of connected MCP clients across all providers. */
     get clientCount(): number {
@@ -217,15 +228,15 @@ export class WsTunnel {
         return n;
     }
 
-    /** Names of all providers that currently have an active WebSocket connection. */
+    /** Names of all providers that currently have an active connection (WebSocket or gRPC). */
     get providerNames(): readonly string[] {
-        return [...this._providers.entries()]
-            .filter(([, s]) => s.ws?.readyState === WebSocket.OPEN)
-            .map(([name]) => name);
+        return [...this._providers.entries()].filter(([name, s]) => this._isProviderConnected(name, s)).map(([name]) => name);
     }
 
     /** @deprecated Check `providerNames.length > 0` instead. */
-    get hasProvider(): boolean { return this.providerNames.length > 0; }
+    get hasProvider(): boolean {
+        return this.providerNames.length > 0;
+    }
 
     // -------------------------------------------------------------------------
     // Lifecycle
@@ -237,9 +248,7 @@ export class WsTunnel {
     start(): Promise<void> {
         return new Promise((resolve) => {
             const handler = (req: IncomingMessage, res: ServerResponse) => this._handleHttp(req, res);
-            this._httpServer = this._options.tls
-                ? https.createServer({ cert: this._options.tls.cert, key: this._options.tls.key }, handler)
-                : http.createServer(handler);
+            this._httpServer = this._options.tls ? https.createServer({ cert: this._options.tls.cert, key: this._options.tls.key }, handler) : http.createServer(handler);
             // Disable perMessageDeflate: snapshots are large base64-encoded PNGs
             // (already compressed). Deflating them wastes CPU without reducing size,
             // which caused multi-second stalls when transferring snapshot responses
@@ -247,8 +256,8 @@ export class WsTunnel {
             this._wss = new WebSocketServer({ server: this._httpServer, perMessageDeflate: false });
 
             this._wss.on("connection", (ws: WebSocket, req: IncomingMessage) => {
-                const url           = req.url ?? "/";
-                const providerPath  = this._options.providerPath  ?? "/provider";
+                const url = req.url ?? "/";
+                const providerPath = this._options.providerPath ?? "/provider";
                 const providersPath = this._options.providersPath ?? "/providers";
 
                 if (url === providersPath || url.startsWith(providersPath + "?")) {
@@ -256,18 +265,37 @@ export class WsTunnel {
                     this._onMultiplexProviderConnect(ws);
                 } else if (url.startsWith(providerPath + "/") || url === providerPath) {
                     // Extract name: everything after "<providerPath>/"
-                    const raw  = url.slice(providerPath.length).replace(/^\//, "");
+                    const raw = url.slice(providerPath.length).replace(/^\//, "");
                     const name = decodeURIComponent(raw.split("?")[0]) || "(unnamed)";
                     this._onProviderConnect(ws, name);
                 } else {
                     // Raw WS MCP client: URL is "/<providerName>" or "/"
-                    const raw  = url.replace(/^\//, "").split("?")[0];
+                    const raw = url.replace(/^\//, "").split("?")[0];
                     const name = decodeURIComponent(raw) || "";
                     this._onClientConnect(ws, name);
                 }
             });
 
-            this._httpServer.listen(this._options.port, this._options.host ?? "0.0.0.0", () => resolve());
+            this._httpServer.listen(this._options.port, this._options.host ?? "0.0.0.0", () => {
+                // Connect to configured gRPC upstream backends.
+                for (const cfg of this._options.grpcUpstreams ?? []) {
+                    const upstream = new GrpcUpstream(cfg);
+                    upstream.onMessage = (data) => {
+                        // Route gRPC responses back to the pending client sinks.
+                        // The response arrives on the composite provider key.
+                        // Since gRPC upstreams are 1:1 (one stream per backend),
+                        // we broadcast to all composite states for this backend.
+                        for (const [name, state] of this._providers) {
+                            if (name.startsWith(cfg.name + "/")) {
+                                this._routeFromProvider(state, data);
+                            }
+                        }
+                    };
+                    this._grpcUpstreams.set(cfg.name, upstream);
+                    upstream.connect();
+                }
+                resolve();
+            });
         });
     }
 
@@ -287,6 +315,8 @@ export class WsTunnel {
             }
             this._providers.clear();
             this._multiplexSockets.clear();
+            for (const upstream of this._grpcUpstreams.values()) upstream.close();
+            this._grpcUpstreams.clear();
             this._wss?.close();
             this._httpServer?.close((err) => (err ? reject(err) : resolve()));
         });
@@ -301,13 +331,16 @@ export class WsTunnel {
         const rawUrl = (req.url ?? "/").split("?")[0];
 
         // CORS
-        res.setHeader("Access-Control-Allow-Origin",  "*");
+        res.setHeader("Access-Control-Allow-Origin", "*");
         res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
-        res.setHeader("Access-Control-Allow-Headers",
-            req.headers["access-control-request-headers"] ?? "Content-Type, Accept, Mcp-Session-Id");
+        res.setHeader("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ?? "Content-Type, Accept, Mcp-Session-Id");
         res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
 
-        if (method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+        if (method === "OPTIONS") {
+            res.writeHead(204);
+            res.end();
+            return;
+        }
 
         // Samples index (no provider prefix)
         const samplesIndexPath = this._options.samplesIndexPath ?? "/__samples_index__";
@@ -320,13 +353,19 @@ export class WsTunnel {
         const route = this._parseProviderRoute(rawUrl);
         if (route) {
             const { providerName, endpoint } = route;
-            const mcpSuffix      = (this._options.mcpPath      ?? "/mcp")      .replace(/^\//, "");
-            const sseSuffix      = (this._options.ssePath       ?? "/sse")      .replace(/^\//, "");
-            const messagesSuffix = (this._options.messagesPath  ?? "/messages") .replace(/^\//, "");
+            const mcpSuffix = (this._options.mcpPath ?? "/mcp").replace(/^\//, "");
+            const sseSuffix = (this._options.ssePath ?? "/sse").replace(/^\//, "");
+            const messagesSuffix = (this._options.messagesPath ?? "/messages").replace(/^\//, "");
 
             if (endpoint === mcpSuffix) {
-                if (method === "GET")  { this._handleMcpGetStream(req, res, providerName); return; }
-                if (method === "POST") { this._handleMcpPost(req, res, providerName);      return; }
+                if (method === "GET") {
+                    this._handleMcpGetStream(req, res, providerName);
+                    return;
+                }
+                if (method === "POST") {
+                    this._handleMcpPost(req, res, providerName);
+                    return;
+                }
             }
             if (endpoint === sseSuffix && method === "GET") {
                 this._handleSseConnect(req, res, providerName);
@@ -342,7 +381,8 @@ export class WsTunnel {
         if (this._options.staticMounts?.length) {
             this._serveStatic(req, res);
         } else {
-            res.writeHead(404); res.end();
+            res.writeHead(404);
+            res.end();
         }
     }
 
@@ -354,7 +394,7 @@ export class WsTunnel {
         const parts = rawUrl.split("/").filter(Boolean);
         if (parts.length !== 2) return null;
         const providerName = decodeURIComponent(parts[0]);
-        const endpoint     = decodeURIComponent(parts[1]);
+        const endpoint = decodeURIComponent(parts[1]);
         if (!providerName || !endpoint) return null;
         return { providerName, endpoint };
     }
@@ -368,14 +408,14 @@ export class WsTunnel {
      * Sends an `endpoint` event so Claude knows where to POST its requests.
      */
     private _handleSseConnect(req: IncomingMessage, res: ServerResponse, providerName: string): void {
-        const sessionId    = randomUUID();
+        const sessionId = randomUUID();
         const messagesSuffix = (this._options.messagesPath ?? "/messages").replace(/^\//, "");
-        const messagesUrl    = `/${encodeURIComponent(providerName)}/${messagesSuffix}`;
+        const messagesUrl = `/${encodeURIComponent(providerName)}/${messagesSuffix}`;
 
         res.writeHead(200, {
-            "Content-Type":  "text/event-stream",
+            "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
-            "Connection":    "keep-alive",
+            Connection: "keep-alive",
         });
         res.write(`event: endpoint\ndata: ${messagesUrl}?sessionId=${sessionId}\n\n`);
 
@@ -396,9 +436,9 @@ export class WsTunnel {
      * Always responds 202 Accepted; the real response arrives over SSE.
      */
     private _handleSseMessage(req: IncomingMessage, res: ServerResponse, providerName: string): void {
-        const params    = new URL(req.url ?? "", "http://localhost").searchParams;
+        const params = new URL(req.url ?? "", "http://localhost").searchParams;
         const sessionId = params.get("sessionId") ?? "";
-        const state     = this._getOrCreateProviderState(providerName);
+        const state = this._getOrCreateProviderState(providerName);
 
         if (!state.sseSessions.has(sessionId)) {
             res.writeHead(400, { "Content-Type": "text/plain" });
@@ -407,28 +447,41 @@ export class WsTunnel {
         }
 
         let body = "";
-        req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
-        req.on("end",  () => {
+        req.on("data", (chunk: Buffer) => {
+            body += chunk.toString();
+        });
+        req.on("end", () => {
             try {
                 const msg = JSON.parse(body) as { id?: string | number };
-                if (msg.id != null) state.pending.set(msg.id, { type: "sse", sessionId });
-            } catch { /* malformed — forward anyway */ }
+                if (msg.id) state.pending.set(msg.id, { type: "sse", sessionId });
+            } catch {
+                /* malformed — forward anyway */
+            }
 
-            if (state.ws?.readyState === WebSocket.OPEN) {
+            if (this._isProviderConnected(providerName, state)) {
                 this._sendToProvider(state, providerName, body);
             } else {
                 const sseRes = state.sseSessions.get(sessionId);
                 if (sseRes) {
                     let errId: string | number | null = null;
-                    try { errId = (JSON.parse(body) as { id?: string | number }).id ?? null; } catch { /* */ }
-                    this._sendSseEvent(sseRes, JSON.stringify({
-                        jsonrpc: "2.0", id: errId,
-                        error: { code: -32000, message: `Provider "${providerName}" not connected` },
-                    }));
+                    try {
+                        errId = (JSON.parse(body) as { id?: string | number }).id ?? null;
+                    } catch {
+                        /* */
+                    }
+                    this._sendSseEvent(
+                        sseRes,
+                        JSON.stringify({
+                            jsonrpc: "2.0",
+                            id: errId,
+                            error: { code: -32000, message: `Provider "${providerName}" not connected` },
+                        })
+                    );
                 }
             }
 
-            res.writeHead(202); res.end();
+            res.writeHead(202);
+            res.end();
         });
     }
 
@@ -439,11 +492,14 @@ export class WsTunnel {
      */
     private _handleMcpPost(req: IncomingMessage, res: ServerResponse, providerName: string): void {
         let body = "";
-        req.on("data", (chunk: Buffer) => { body += chunk.toString(); });
+        req.on("data", (chunk: Buffer) => {
+            body += chunk.toString();
+        });
         req.on("end", () => {
             let msg: { id?: string | number } = {};
-            try { msg = JSON.parse(body) as { id?: string | number }; }
-            catch {
+            try {
+                msg = JSON.parse(body) as { id?: string | number };
+            } catch {
                 res.writeHead(400, { "Content-Type": "text/plain" });
                 res.end("Invalid JSON");
                 return;
@@ -451,16 +507,19 @@ export class WsTunnel {
 
             const state = this._getOrCreateProviderState(providerName);
 
-            if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
+            if (!this._isProviderConnected(providerName, state)) {
                 res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
-                res.end(JSON.stringify({
-                    jsonrpc: "2.0", id: msg.id ?? null,
-                    error: { code: -32000, message: `Provider "${providerName}" not connected` },
-                }));
+                res.end(
+                    JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: msg.id ?? null,
+                        error: { code: -32000, message: `Provider "${providerName}" not connected` },
+                    })
+                );
                 return;
             }
 
-            if (msg.id != null) {
+            if (msg.id) {
                 // Request: hold the response open; reply arrives in _routeFromProvider.
                 state.pending.set(msg.id, { type: "http", res });
             } else {
@@ -482,9 +541,9 @@ export class WsTunnel {
         const sessionId = (req.headers["mcp-session-id"] as string | undefined) ?? randomUUID();
 
         res.writeHead(200, {
-            "Content-Type":  "text/event-stream",
+            "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache, no-transform",
-            "Connection":    "keep-alive",
+            Connection: "keep-alive",
             "Mcp-Session-Id": sessionId,
         });
         res.write(": stream open\n\n");
@@ -525,7 +584,8 @@ export class WsTunnel {
             state.ws = null;
             // Notify all pending sinks that the provider is gone.
             const error = JSON.stringify({
-                jsonrpc: "2.0", id: null,
+                jsonrpc: "2.0",
+                id: null,
                 error: { code: -32000, message: `Provider "${name}" disconnected` },
             });
             for (const sink of state.pending.values()) {
@@ -583,13 +643,16 @@ export class WsTunnel {
                 const existing = this._providers.get(name);
                 if (existing?.ws?.readyState === WebSocket.OPEN) {
                     // Provider already connected via another socket — reject this name.
-                    ws.send(JSON.stringify({
-                        provider: name,
-                        payload: {
-                            jsonrpc: "2.0", id: null,
-                            error: { code: -32000, message: `Provider "${name}" is already connected` },
-                        },
-                    }));
+                    ws.send(
+                        JSON.stringify({
+                            provider: name,
+                            payload: {
+                                jsonrpc: "2.0",
+                                id: null,
+                                error: { code: -32000, message: `Provider "${name}" is already connected` },
+                            },
+                        })
+                    );
                     return;
                 }
                 providerNames.add(name);
@@ -608,7 +671,8 @@ export class WsTunnel {
                     state.ws = null;
                     // Notify pending sinks that the provider is gone.
                     const error = JSON.stringify({
-                        jsonrpc: "2.0", id: null,
+                        jsonrpc: "2.0",
+                        id: null,
                         error: { code: -32000, message: `Provider "${name}" disconnected` },
                     });
                     for (const sink of state.pending.values()) {
@@ -638,6 +702,17 @@ export class WsTunnel {
      * envelope when the provider's WebSocket is a multiplexed connection.
      */
     private _sendToProvider(state: ProviderState, providerName: string, data: string): void {
+        // Route composite provider names ("backend/provider") to gRPC upstream.
+        const slashIdx = providerName.indexOf("/");
+        if (slashIdx > 0) {
+            const backend = providerName.substring(0, slashIdx);
+            const upstream = this._grpcUpstreams.get(backend);
+            if (upstream?.isOpen) {
+                upstream.send(data);
+                return;
+            }
+        }
+
         if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
 
         if (this._multiplexSockets.has(state.ws)) {
@@ -653,15 +728,20 @@ export class WsTunnel {
         try {
             const msg = JSON.parse(data) as { id?: string | number };
             if (msg?.id != null) state.pending.set(msg.id, { type: "ws", socket: client });
-        } catch { /* forward as-is */ }
+        } catch {
+            /* forward as-is */
+        }
 
-        if (state.ws?.readyState === WebSocket.OPEN) {
+        if (this._isProviderConnected(providerName, state)) {
             this._sendToProvider(state, providerName, data);
         } else {
-            client.send(JSON.stringify({
-                jsonrpc: "2.0", id: null,
-                error: { code: -32000, message: "No provider connected" },
-            }));
+            client.send(
+                JSON.stringify({
+                    jsonrpc: "2.0",
+                    id: null,
+                    error: { code: -32000, message: "No provider connected" },
+                })
+            );
         }
     }
 
@@ -708,6 +788,20 @@ export class WsTunnel {
     // Provider state helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Returns `true` if the provider is reachable — either via a WebSocket
+     * connection or via a gRPC upstream (composite provider name).
+     */
+    private _isProviderConnected(providerName: string, state: ProviderState): boolean {
+        if (state.ws?.readyState === WebSocket.OPEN) return true;
+        const slashIdx = providerName.indexOf("/");
+        if (slashIdx > 0) {
+            const backend = providerName.substring(0, slashIdx);
+            return this._grpcUpstreams.get(backend)?.isOpen ?? false;
+        }
+        return false;
+    }
+
     /** Returns the state for `name`, creating it lazily if it doesn't exist yet. */
     private _getOrCreateProviderState(name: string): ProviderState {
         let state = this._providers.get(name);
@@ -736,11 +830,11 @@ export class WsTunnel {
             const samplesDir = nodePath.join(rootMount.dir, "samples");
             try {
                 if (fs.existsSync(samplesDir) && fs.statSync(samplesDir).isDirectory()) {
-                    files = fs.readdirSync(samplesDir).filter((name) =>
-                        fs.statSync(nodePath.join(samplesDir, name)).isFile()
-                    );
+                    files = fs.readdirSync(samplesDir).filter((name) => fs.statSync(nodePath.join(samplesDir, name)).isFile());
                 }
-            } catch { /* return empty list on any I/O error */ }
+            } catch {
+                /* return empty list on any I/O error */
+            }
         }
 
         res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
@@ -762,25 +856,43 @@ export class WsTunnel {
             })
             .sort((a, b) => b.urlPrefix.length - a.urlPrefix.length)[0];
 
-        if (!mount) { res.writeHead(404, { "Content-Type": "text/plain" }); res.end("Not found"); return; }
+        if (!mount) {
+            res.writeHead(404, { "Content-Type": "text/plain" });
+            res.end("Not found");
+            return;
+        }
 
-        const relative   = rawUrl.slice(mount.urlPrefix.length) || "/";
+        const relative = rawUrl.slice(mount.urlPrefix.length) || "/";
         const normalized = nodePath.normalize(relative);
 
-        if (normalized.startsWith("..")) { res.writeHead(403); res.end("Forbidden"); return; }
+        if (normalized.startsWith("..")) {
+            res.writeHead(403);
+            res.end("Forbidden");
+            return;
+        }
 
         const mountAbs = nodePath.resolve(mount.dir);
-        let   filePath = nodePath.join(mountAbs, normalized);
+        let filePath = nodePath.join(mountAbs, normalized);
 
         if (!filePath.startsWith(mountAbs + nodePath.sep) && filePath !== mountAbs) {
-            res.writeHead(403); res.end("Forbidden"); return;
+            res.writeHead(403);
+            res.end("Forbidden");
+            return;
         }
 
         try {
             if (fs.statSync(filePath).isDirectory()) filePath = nodePath.join(filePath, "index.html");
-        } catch { res.writeHead(404); res.end("Not found"); return; }
+        } catch {
+            res.writeHead(404);
+            res.end("Not found");
+            return;
+        }
 
-        if (!fs.existsSync(filePath)) { res.writeHead(404); res.end("Not found"); return; }
+        if (!fs.existsSync(filePath)) {
+            res.writeHead(404);
+            res.end("Not found");
+            return;
+        }
 
         const ext = nodePath.extname(filePath).toLowerCase();
         res.writeHead(200, { "Content-Type": MIME[ext] ?? "application/octet-stream" });

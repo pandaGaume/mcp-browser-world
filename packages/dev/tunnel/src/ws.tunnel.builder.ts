@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import { WsTunnel, type WsTunnelOptions, type StaticMount } from "./ws.tunnel.js";
+import type { GrpcUpstreamConfig } from "./grpc.upstream.js";
 
 /**
  * Fluent builder that constructs a configured {@link WsTunnel}.
@@ -21,7 +22,6 @@ import { WsTunnel, type WsTunnelOptions, type StaticMount } from "./ws.tunnel.js
  * ```
  */
 export class WsTunnelBuilder {
-
     private _port = 3000;
     private _host: string | undefined;
     private _providerPath = "/provider";
@@ -32,6 +32,7 @@ export class WsTunnelBuilder {
     private _mcpPath = "/mcp";
     private _samplesIndexPath = "/__samples_index__";
     private _staticMounts: StaticMount[] = [];
+    private _grpcUpstreams: GrpcUpstreamConfig[] = [];
     private _tls: { cert: string; key: string } | undefined = undefined;
 
     /** Sets the TCP port the tunnel listens on. */
@@ -129,6 +130,21 @@ export class WsTunnelBuilder {
     }
 
     /**
+     * Registers a gRPC upstream backend. Browser clients reach it using
+     * composite provider names: `"<name>/<providerName>"`.
+     *
+     * Can be called multiple times to register multiple backends.
+     *
+     * @param name  Logical name (first segment of the composite provider name).
+     * @param host  gRPC server host.
+     * @param port  gRPC server port.
+     */
+    withGrpcUpstream(name: string, host: string, port: number, options?: { useTls?: boolean; rootCerts?: Buffer }): this {
+        this._grpcUpstreams.push({ name, host, port, ...options });
+        return this;
+    }
+
+    /**
      * Enables HTTPS/WSS mode by supplying PEM-encoded certificate and key strings directly.
      * Call this when you already have the PEM content in memory.
      */
@@ -145,10 +161,7 @@ export class WsTunnelBuilder {
      * @param keyPath   Path to the PEM private-key file (e.g. `privkey.pem`).
      */
     withTlsFiles(certPath: string, keyPath: string): this {
-        return this.withTls(
-            fs.readFileSync(certPath, "utf8"),
-            fs.readFileSync(keyPath, "utf8"),
-        );
+        return this.withTls(fs.readFileSync(certPath, "utf8"), fs.readFileSync(keyPath, "utf8"));
     }
 
     /** Constructs and returns a configured {@link WsTunnel}. */
@@ -164,6 +177,7 @@ export class WsTunnelBuilder {
             mcpPath: this._mcpPath,
             samplesIndexPath: this._samplesIndexPath,
             staticMounts: this._staticMounts.length > 0 ? [...this._staticMounts] : undefined,
+            grpcUpstreams: this._grpcUpstreams.length > 0 ? [...this._grpcUpstreams] : undefined,
             tls: this._tls,
         };
         return new WsTunnel(options);
