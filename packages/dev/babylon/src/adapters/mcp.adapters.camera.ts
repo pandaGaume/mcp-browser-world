@@ -43,6 +43,8 @@ import {
     MeshShapeHint,
     VisibleObjectIncludeField,
     VisibleObjectSortBy,
+    downsampleDepthGrid,
+    encodeDepthGrid,
 } from "@dev/behaviors";
 import { GeodeticSystem } from "@dev/geodesy";
 import { McpBabylonDomain, McpCameraResourceUriPrefix } from "../mcp.commons";
@@ -71,6 +73,7 @@ const ALL_TOOLS = [
     McpCameraBehavior.CameraStopAnimationFn,
     McpCameraBehavior.SceneVisibleObjectsFn,
     McpCameraBehavior.ScenePickFromCenterFn,
+    McpCameraBehavior.CameraLidarFn,
 ].join('", "');
 
 /**
@@ -559,6 +562,81 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                     return McpToolResults.image(base64, "image/png");
                 } catch (err) {
                     return McpToolResults.error(`Snapshot failed for camera "${camera.name}": ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+
+            // -----------------------------------------------------------------
+            // camera.lidar — depth buffer as compact lidar grid
+            // -----------------------------------------------------------------
+            case McpCameraBehavior.CameraLidarFn: {
+                const beams = (args["beams"] as number | undefined) ?? 16;
+                const angularResolution = (args["angularResolution"] as number | undefined) ?? 1.0;
+                const encoding = (args["encoding"] as "uint16" | "float32" | undefined) ?? "uint16";
+
+                try {
+                    const engine = this._scene.getEngine();
+
+                    // Compute horizontal FOV in degrees.
+                    // camera.fov is the vertical FOV in radians for perspective cameras.
+                    const vFovRad = camera.fov;
+                    const aspectRatio = engine.getAspectRatio(camera);
+                    const hFovDeg = 2 * Math.atan(Math.tan(vFovRad / 2) * aspectRatio) * RAD_TO_DEG;
+
+                    const cols = Math.max(1, Math.floor(hFovDeg / angularResolution));
+                    const rows = beams;
+
+                    // Enable depth renderer (lazy, one per camera).
+                    const depthRenderer = this._scene.enableDepthRenderer(camera);
+
+                    // Render the scene to populate the depth texture.
+                    const savedViewport = camera.viewport;
+                    camera.viewport = new Viewport(0, 0, 1, 1);
+                    depthRenderer.getDepthMap().activeCamera = camera;
+                    depthRenderer.getDepthMap().renderList = null;
+                    depthRenderer.getDepthMap().render(true);
+                    camera.viewport = savedViewport;
+
+                    // Read depth pixels (normalized [0, 1]).
+                    const rawDepth = await depthRenderer.getDepthMap().readPixels();
+                    if (!rawDepth) {
+                        return McpToolResults.error(`Lidar failed for camera "${camera.name}": readPixels returned null.`);
+                    }
+
+                    // The depth map is a single-channel float texture but readPixels
+                    // returns RGBA (4 floats per pixel). Extract the R channel.
+                    const depthW = depthRenderer.getDepthMap().getRenderWidth();
+                    const depthH = depthRenderer.getDepthMap().getRenderHeight();
+                    const pixelCount = depthW * depthH;
+                    const rawArr = rawDepth instanceof Float32Array ? rawDepth : new Float32Array(rawDepth.buffer, rawDepth.byteOffset, rawDepth.byteLength);
+
+                    // Determine if data is packed RGBA (4 components) or single-channel.
+                    const stride = rawArr.length / pixelCount;
+                    const depthBuffer = new Float32Array(pixelCount);
+
+                    if (stride >= 4) {
+                        // RGBA: depth in R channel
+                        for (let i = 0; i < pixelCount; i++) {
+                            depthBuffer[i] = rawArr[i * stride];
+                        }
+                    } else {
+                        depthBuffer.set(rawArr.subarray(0, pixelCount));
+                    }
+
+                    // Flip vertically (WebGL reads bottom-to-top).
+                    const flipped = new Float32Array(pixelCount);
+                    for (let y = 0; y < depthH; y++) {
+                        flipped.set(depthBuffer.subarray((depthH - 1 - y) * depthW, (depthH - y) * depthW), y * depthW);
+                    }
+
+                    // Downsample and encode.
+                    const near = camera.minZ;
+                    const far = camera.maxZ;
+                    const grid = downsampleDepthGrid(flipped, depthW, depthH, cols, rows, near, far);
+                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding);
+
+                    return McpToolResults.json(result);
+                } catch (err) {
+                    return McpToolResults.error(`Lidar failed for camera "${camera.name}": ${err instanceof Error ? err.message : String(err)}`);
                 }
             }
 

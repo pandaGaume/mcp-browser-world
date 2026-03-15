@@ -76,6 +76,9 @@ export class McpCameraBehavior extends McpBehavior {
     /** Lists all registered snapshot filters with their descriptions. */
     public static readonly CameraListFiltersFn = "camera_list_filters";
 
+    /** Captures a depth buffer from the camera and returns a compact lidar-style depth grid. */
+    public static readonly CameraLidarFn = "camera_lidar";
+
     // -------------------------------------------------------------------------
 
     public constructor(adapter: IMcpBehaviorAdapter, options: McpBehaviorOptions = {}) {
@@ -874,6 +877,59 @@ export class McpCameraBehavior extends McpBehavior {
                                 McpCameraBehavior.ScenePickFromCenterFn,
                                 "allHits",
                                 "If true, returns all meshes intersected by the ray (including those behind the first hit), sorted by distance in the hits array. Useful when objects are stacked or partially occluded. Defaults to false (closest hit only)."
+                            ),
+                        },
+                    },
+                    required: ["uri"],
+                    additionalProperties: false,
+                },
+            },
+
+            // -----------------------------------------------------------------
+            // camera.lidar — depth buffer as compact lidar grid
+            // -----------------------------------------------------------------
+            {
+                name: McpCameraBehavior.CameraLidarFn,
+                description: this._resolveToolDescription(
+                    McpCameraBehavior.CameraLidarFn,
+                    "Captures the depth buffer from the camera and returns a compact lidar-style depth grid. " +
+                        "Resolution follows real lidar conventions: vertical 'beams' (16/32/64/128) and horizontal columns " +
+                        "derived from the camera's horizontal FOV divided by 'angularResolution' (degrees per column). " +
+                        "Returns base64-encoded depth values with metadata (near/far planes, FOV, encoding)."
+                ),
+                inputSchema: {
+                    type: "object",
+                    properties: {
+                        uri: {
+                            type: "string",
+                            description: this._resolvePropertyDescription(McpCameraBehavior.CameraLidarFn, "uri", "Camera URI"),
+                        },
+                        beams: {
+                            type: "number",
+                            enum: [16, 32, 64, 128],
+                            description: this._resolvePropertyDescription(
+                                McpCameraBehavior.CameraLidarFn,
+                                "beams",
+                                "Number of vertical channels (rows). Standard lidar tiers: 16, 32, 64, or 128. Defaults to 16."
+                            ),
+                        },
+                        angularResolution: {
+                            type: "number",
+                            description: this._resolvePropertyDescription(
+                                McpCameraBehavior.CameraLidarFn,
+                                "angularResolution",
+                                "Horizontal angular step in degrees. Columns = floor(hFov / angularResolution). " +
+                                    "Smaller values produce denser horizontal sampling. Defaults to 1.0."
+                            ),
+                        },
+                        encoding: {
+                            type: "string",
+                            enum: ["uint16", "float32"],
+                            description: this._resolvePropertyDescription(
+                                McpCameraBehavior.CameraLidarFn,
+                                "encoding",
+                                "Depth encoding: 'uint16' returns millimeters as Uint16Array (compact, 0–65535 mm range), " +
+                                    "'float32' returns meters as Float32Array (full precision). Defaults to 'uint16'."
                             ),
                         },
                     },

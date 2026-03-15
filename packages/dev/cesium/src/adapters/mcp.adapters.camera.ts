@@ -68,7 +68,7 @@ import {
 } from "cesium";
 import { JsonRpcMimeType, McpAdapterBase, McpResourceContent, McpToolResult, McpToolResults, ToolSupport } from "@dev/core";
 import { IHasImageFiltering, IImageFilterSet, ImageFilterSet, isTextSnapshotFilter } from "@dev/filters";
-import { ICameraState, IFrustum, IScenePickHit, IScenePickResult, ISceneVisibleObjectsState, IVisibleObjectState, McpCameraBehavior } from "@dev/behaviors";
+import { ICameraState, IFrustum, IScenePickHit, IScenePickResult, ISceneVisibleObjectsState, IVisibleObjectState, McpCameraBehavior, downsampleDepthGrid, encodeDepthGrid } from "@dev/behaviors";
 import { resolveToCartesian3 } from "@dev/geodesy";
 import { McpCesiumDomain, McpCameraResourceUriPrefix } from "../mcp.commons";
 
@@ -107,6 +107,7 @@ const ALL_TOOLS = [
     McpCameraBehavior.CameraStopAnimationFn,
     McpCameraBehavior.SceneVisibleObjectsFn,
     McpCameraBehavior.ScenePickFromCenterFn,
+    McpCameraBehavior.CameraLidarFn,
 ].join('", "');
 
 // ---------------------------------------------------------------------------
@@ -600,6 +601,74 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                     return McpToolResults.image(base64, "image/png");
                 } catch (err) {
                     return McpToolResults.error(`Snapshot failed: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+
+            // -----------------------------------------------------------------
+            // camera_lidar — depth buffer as compact lidar grid
+            // -----------------------------------------------------------------
+            case McpCameraBehavior.CameraLidarFn: {
+                const beams = (args["beams"] as number | undefined) ?? 16;
+                const angularResolution = (args["angularResolution"] as number | undefined) ?? 1.0;
+                const encoding = (args["encoding"] as "uint16" | "float32" | undefined) ?? "uint16";
+
+                try {
+                    // Ensure fresh render.
+                    this._viewer.render();
+
+                    const canvas = this._viewer.canvas as HTMLCanvasElement;
+                    const w = canvas.width;
+                    const h = canvas.height;
+
+                    // Compute horizontal FOV in degrees.
+                    const frustum = this._scene.camera.frustum;
+                    let hFovDeg: number;
+                    if (frustum instanceof PerspectiveFrustum && frustum.fov !== undefined && frustum.aspectRatio !== undefined) {
+                        // PerspectiveFrustum.fov is the vertical FOV; compute hFov from aspect.
+                        hFovDeg = 2 * Math.atan(Math.tan(frustum.fov / 2) * frustum.aspectRatio) * RAD_TO_DEG;
+                    } else {
+                        // Orthographic — use a sensible default angular span.
+                        hFovDeg = 60;
+                    }
+
+                    const cols = Math.max(1, Math.floor(hFovDeg / angularResolution));
+                    const rows = beams;
+
+                    // Read depth buffer via WebGL.
+                    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
+                    if (!gl) {
+                        return McpToolResults.error("Lidar failed: unable to obtain WebGL context.");
+                    }
+
+                    const depthPixels = new Float32Array(w * h);
+                    // gl.DEPTH_COMPONENT = 0x1902
+                    gl.readPixels(0, 0, w, h, 0x1902, gl.FLOAT, depthPixels);
+
+                    // Linearize depth.  Cesium uses logarithmic depth by default.
+                    // depth_buffer values are in [0, 1] non-linear.
+                    // Linear depth = (near * far) / (far - depth * (far - near))
+                    const near = frustum instanceof PerspectiveFrustum ? frustum.near : 0.1;
+                    const far = frustum instanceof PerspectiveFrustum ? frustum.far : 100000;
+                    const range = far - near;
+                    for (let i = 0; i < depthPixels.length; i++) {
+                        const zNdc = depthPixels[i];
+                        const linearZ = (near * far) / (far - zNdc * range);
+                        depthPixels[i] = Math.min(Math.max((linearZ - near) / range, 0), 1);
+                    }
+
+                    // Flip vertically (WebGL reads bottom-to-top).
+                    const flipped = new Float32Array(w * h);
+                    for (let y = 0; y < h; y++) {
+                        flipped.set(depthPixels.subarray((h - 1 - y) * w, (h - y) * w), y * w);
+                    }
+
+                    // Downsample and encode.
+                    const grid = downsampleDepthGrid(flipped, w, h, cols, rows, near, far);
+                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding);
+
+                    return McpToolResults.json(result);
+                } catch (err) {
+                    return McpToolResults.error(`Lidar failed: ${err instanceof Error ? err.message : String(err)}`);
                 }
             }
 
