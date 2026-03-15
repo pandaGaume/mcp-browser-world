@@ -611,6 +611,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                 const beams = (args["beams"] as number | undefined) ?? 16;
                 const angularResolution = (args["angularResolution"] as number | undefined) ?? 1.0;
                 const encoding = (args["encoding"] as "uint16" | "float32" | undefined) ?? "uint16";
+                const maxRange = (args["maxRange"] as number | undefined) ?? 100;
 
                 try {
                     // Ensure fresh render.
@@ -664,7 +665,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
 
                     // Downsample and encode.
                     const grid = downsampleDepthGrid(flipped, w, h, cols, rows, near, far);
-                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding);
+                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding, maxRange);
 
                     return McpToolResults.json(result);
                 } catch (err) {

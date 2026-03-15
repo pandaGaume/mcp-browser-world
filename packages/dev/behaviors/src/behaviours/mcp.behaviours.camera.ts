@@ -932,6 +932,15 @@ export class McpCameraBehavior extends McpBehavior {
                                     "'float32' returns meters as Float32Array (full precision). Defaults to 'uint16'."
                             ),
                         },
+                        maxRange: {
+                            type: "number",
+                            description: this._resolvePropertyDescription(
+                                McpCameraBehavior.CameraLidarFn,
+                                "maxRange",
+                                "Maximum lidar range in meters. Depth values beyond this distance are reported as 0 (no return), " +
+                                    "matching real lidar behavior for sky or out-of-range hits. Defaults to 100."
+                            ),
+                        },
                     },
                     required: ["uri"],
                     additionalProperties: false,

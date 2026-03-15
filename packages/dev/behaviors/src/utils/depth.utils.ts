@@ -78,11 +78,13 @@ export interface ILidarResult {
     near: number;
     /** Camera far plane distance, in meters. */
     far: number;
+    /** Maximum lidar range in meters. Values beyond this are reported as 0 (no return). */
+    maxRange: number;
     /** Encoding format of the depth array. */
     encoding: "uint16" | "float32";
     /** Unit of depth values: `"mm"` for uint16, `"m"` for float32. */
     unit: "mm" | "m";
-    /** Base64-encoded depth data (little-endian). */
+    /** Base64-encoded depth data (little-endian). 0 = no return (out of range). */
     depth: string;
 }
 
@@ -98,6 +100,9 @@ export interface ILidarResult {
  * @param angularResolution Angular step in degrees.
  * @param encoding          `"uint16"` (millimeters, clamped 0–65535) or
  *                          `"float32"` (meters, full precision).
+ * @param maxRange          Maximum lidar range in meters. Depth values
+ *                          beyond this are set to 0 (no return), matching
+ *                          real lidar behavior for sky / out-of-range hits.
  */
 export function encodeDepthGrid(
     grid: Float32Array,
@@ -108,21 +113,26 @@ export function encodeDepthGrid(
     hFov: number,
     angularResolution: number,
     encoding: "uint16" | "float32",
+    maxRange: number,
 ): ILidarResult {
     let bytes: Uint8Array;
     let unit: "mm" | "m";
 
     if (encoding === "uint16") {
-        // Meters → millimeters, clamped to uint16 range.
+        // Meters → millimeters. Out-of-range → 0 (no return).
         const u16 = new Uint16Array(grid.length);
         for (let i = 0; i < grid.length; i++) {
-            u16[i] = Math.min(Math.round(grid[i] * 1000), 65535);
+            u16[i] = grid[i] > maxRange ? 0 : Math.min(Math.round(grid[i] * 1000), 65535);
         }
         bytes = new Uint8Array(u16.buffer);
         unit = "mm";
     } else {
-        // Float32 meters, as-is.
-        bytes = new Uint8Array(grid.buffer);
+        // Float32 meters. Out-of-range → 0 (no return).
+        const clamped = new Float32Array(grid.length);
+        for (let i = 0; i < grid.length; i++) {
+            clamped[i] = grid[i] > maxRange ? 0 : grid[i];
+        }
+        bytes = new Uint8Array(clamped.buffer);
         unit = "m";
     }
 
@@ -133,5 +143,5 @@ export function encodeDepthGrid(
     }
     const depth = btoa(binary);
 
-    return { cols, rows, hFov, angularResolution, near, far, encoding, unit, depth };
+    return { cols, rows, hFov, angularResolution, near, far, maxRange, encoding, unit, depth };
 }

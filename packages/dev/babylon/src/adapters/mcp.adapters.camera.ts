@@ -572,6 +572,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                 const beams = (args["beams"] as number | undefined) ?? 16;
                 const angularResolution = (args["angularResolution"] as number | undefined) ?? 1.0;
                 const encoding = (args["encoding"] as "uint16" | "float32" | undefined) ?? "uint16";
+                const maxRange = (args["maxRange"] as number | undefined) ?? 100;
 
                 try {
                     const engine = this._scene.getEngine();
@@ -586,15 +587,20 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                     const rows = beams;
 
                     // Enable depth renderer (lazy, one per camera).
+                    // The depth renderer hooks into the scene's render loop and
+                    // automatically populates its depth map when the scene renders.
                     const depthRenderer = this._scene.enableDepthRenderer(camera);
 
-                    // Render the scene to populate the depth texture.
-                    const savedViewport = camera.viewport;
-                    camera.viewport = new Viewport(0, 0, 1, 1);
-                    depthRenderer.getDepthMap().activeCamera = camera;
-                    depthRenderer.getDepthMap().renderList = null;
-                    depthRenderer.getDepthMap().render(true);
-                    camera.viewport = savedViewport;
+                    // The DepthRenderer constructor fires _initShaderSourceAsync()
+                    // without awaiting it, so the depth shaders are loaded via
+                    // dynamic import on the microtask queue.  We must yield once
+                    // to let those imports resolve, then wait for the full scene
+                    // (including render-target readiness) before rendering.
+                    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+                    await this._scene.whenReadyAsync(true);
+
+                    // Force a full scene render to populate the depth texture.
+                    this._scene.render();
 
                     // Read depth pixels (normalized [0, 1]).
                     const rawDepth = await depthRenderer.getDepthMap().readPixels();
@@ -632,7 +638,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                     const near = camera.minZ;
                     const far = camera.maxZ;
                     const grid = downsampleDepthGrid(flipped, depthW, depthH, cols, rows, near, far);
-                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding);
+                    const result = encodeDepthGrid(grid, cols, rows, near, far, hFovDeg, angularResolution, encoding, maxRange);
 
                     return McpToolResults.json(result);
                 } catch (err) {
