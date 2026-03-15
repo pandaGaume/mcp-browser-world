@@ -15,6 +15,7 @@
         { "path": "packages/dev/behaviors/tsconfig.build.json" },
         { "path": "packages/dev/babylon/tsconfig.build.json" },
         { "path": "packages/dev/cesium/tsconfig.build.json" },
-        { "path": "packages/dev/tunnel/tsconfig.build.json" }
+        { "path": "packages/dev/tunnel/tsconfig.build.json" },
+        { "path": "packages/dev/grpc/tsconfig.build.json" }
     ]
 }

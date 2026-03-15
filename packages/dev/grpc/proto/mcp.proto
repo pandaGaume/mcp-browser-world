@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package mcp;
+
+// Direct 1:1 bidirectional streaming transport.
+// Maps to IMessageTransport: each McpMessage.payload is a serialized JSON-RPC 2.0 string.
+service McpTransport {
+    rpc Channel(stream McpMessage) returns (stream McpMessage);
+}
+
+// Multiplexed N:1 bidirectional streaming transport.
+// Multiple providers share a single gRPC channel, routed by provider name.
+service McpMultiplexTransport {
+    rpc Channel(stream McpEnvelope) returns (stream McpEnvelope);
+}
+
+// A single JSON-RPC 2.0 message (request, response, or notification).
+message McpMessage {
+    string payload = 1;
+}
+
+// A multiplexed message: provider name + JSON-RPC 2.0 payload.
+message McpEnvelope {
+    string provider = 1;
+    string payload = 2;
+}

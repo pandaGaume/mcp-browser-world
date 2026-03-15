@@ -1,0 +1,24 @@
+{
+    "extends": "../../../tsconfig.build.json",
+
+    "compilerOptions": {
+        "composite": true,
+        "outDir": "./dist",
+        "rootDir": "./src",
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+
+        // Node.js process — override the root browser lib set.
+        "lib": ["ES2020"],
+        "types": ["node"],
+
+        // NodeNext is required for proper Node.js ESM resolution: relative
+        // imports must carry the ".js" extension in source, which Node then
+        // resolves to the compiled .js file at runtime.
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext"
+    },
+
+    "include": ["./src/**/*.ts"],
+    "exclude": ["**/node_modules", "**/dist"]
+}
