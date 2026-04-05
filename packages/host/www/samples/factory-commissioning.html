@@ -188,7 +188,9 @@
                 user-select: none;
                 border-bottom: 1px solid var(--border);
             }
-            .tool-panel-header:active { cursor: grabbing; }
+            .tool-panel-header:active {
+                cursor: grabbing;
+            }
             .tool-panel-title {
                 font-family: var(--mono);
                 font-size: 0.78rem;
@@ -203,7 +205,9 @@
                 cursor: pointer;
                 padding: 2px 6px;
             }
-            .tool-panel-close:hover { color: var(--red); }
+            .tool-panel-close:hover {
+                color: var(--red);
+            }
             .tool-panel-body {
                 display: flex;
                 flex: 1;
@@ -226,7 +230,9 @@
                 padding: 10px 14px;
                 box-sizing: border-box;
             }
-            .tool-panel-section { margin-bottom: 12px; }
+            .tool-panel-section {
+                margin-bottom: 12px;
+            }
             .tool-panel-section-title {
                 font-family: var(--mono);
                 font-size: 0.72rem;
@@ -246,7 +252,9 @@
                 font-size: 0.72rem;
                 color: var(--text);
             }
-            .resource-item:hover { background: var(--surface); }
+            .resource-item:hover {
+                background: var(--surface);
+            }
             .resource-item .res-uri {
                 overflow: hidden;
                 text-overflow: ellipsis;
@@ -279,7 +287,9 @@
                 cursor: pointer;
                 transition: background 0.15s;
             }
-            .tool-item:hover { background: var(--surface); }
+            .tool-item:hover {
+                background: var(--surface);
+            }
             .tool-item.active {
                 background: var(--surface);
                 border-left: 3px solid var(--accent);
@@ -309,7 +319,9 @@
                 color: var(--accent);
                 margin-bottom: 8px;
             }
-            .param-field { margin-bottom: 8px; }
+            .param-field {
+                margin-bottom: 8px;
+            }
             .param-field label {
                 display: block;
                 font-family: var(--mono);
@@ -317,7 +329,9 @@
                 color: var(--text);
                 margin-bottom: 2px;
             }
-            .param-field label .required { color: var(--red); }
+            .param-field label .required {
+                color: var(--red);
+            }
             .param-field input[type="text"],
             .param-field input[type="number"],
             .param-field textarea {
@@ -331,7 +345,10 @@
                 font-size: 0.72rem;
                 padding: 4px 8px;
             }
-            .param-field textarea { min-height: 50px; resize: vertical; }
+            .param-field textarea {
+                min-height: 50px;
+                resize: vertical;
+            }
             .param-field .param-desc {
                 font-size: 0.62rem;
                 color: var(--muted);
@@ -361,10 +378,20 @@
                 border-radius: 50%;
                 animation: tool-spin 0.6s linear infinite;
             }
-            .tool-spinner.visible { display: inline-block; }
-            @keyframes tool-spin { to { transform: rotate(360deg); } }
-            .tool-result-container { width: 100%; }
-            .tool-result { margin-top: 12px; }
+            .tool-spinner.visible {
+                display: inline-block;
+            }
+            @keyframes tool-spin {
+                to {
+                    transform: rotate(360deg);
+                }
+            }
+            .tool-result-container {
+                width: 100%;
+            }
+            .tool-result {
+                margin-top: 12px;
+            }
             .tool-result .tool-result-label {
                 font-family: var(--mono);
                 font-size: 0.72rem;
@@ -372,7 +399,9 @@
                 color: var(--green);
                 margin-bottom: 6px;
             }
-            .tool-result.error .tool-result-label { color: var(--red); }
+            .tool-result.error .tool-result-label {
+                color: var(--red);
+            }
             .tool-result pre {
                 background: var(--surface);
                 border: 1px solid var(--border);
@@ -479,15 +508,9 @@
             // =========================================================
             // MCP imports
             // =========================================================
-            const {
-                McpServerBuilder, LoopbackTransport, McpClient,
-                McpGrammarStore, McpGrammarBehavior,
-            } = window.McpServer;
+            const { McpServerBuilder, LoopbackTransport, McpClient, McpGrammarStore, McpGrammarBehavior } = window.McpServer;
 
-            const {
-                McpCameraAdapter, McpCameraBehavior,
-                McpMeshAdapter, McpMeshBehavior,
-            } = window.McpBabylon;
+            const { McpCameraAdapter, McpCameraBehavior, McpMeshAdapter, McpMeshBehavior } = window.McpBabylon;
 
             // =========================================================
             // Babylon.js engine + scene
@@ -516,12 +539,12 @@
                 {
                     name: "station-2",
                     label: "Station 2",
-                    pos: new BABYLON.Vector3(0, 0, 0),
+                    pos: new BABYLON.Vector3(0, 8.5, 0),
                     color: new BABYLON.Color3(0.25, 0.8, 0.3),
                     hexColor: "#40cc4d",
                     defaultRole: "hydraulic stamping press",
                     defaultDesc: "Stamps sheet metal panels into shape. The moving mesh is the upper die platen, position controls the press stroke.",
-                    // Optional: model: { dir: "/3dmodels/", file: "press.glb", scale: 2 },
+                    model: { dir: "/3dmodels/", file: "hydraulic_press.glb", scale: 10 },
                 },
                 {
                     name: "station-3",
@@ -585,9 +608,7 @@
                 if (def.model) {
                     try {
                         log(`${def.label}: loading model ${def.model.file}\u2026`, "dim");
-                        const result = await BABYLON.SceneLoader.ImportMeshAsync(
-                            "", def.model.dir, def.model.file, scene,
-                        );
+                        const result = await BABYLON.SceneLoader.ImportMeshAsync("", def.model.dir, def.model.file, scene);
 
                         // Wrap under a named root
                         const root = new BABYLON.TransformNode(def.name, scene);
@@ -636,9 +657,15 @@
             /** Creates simple box+arm+sphere primitives as fallback geometry. */
             function buildStationFallback(def, scene) {
                 // Base pedestal
-                const base = BABYLON.MeshBuilder.CreateBox(def.name + "_base", {
-                    width: 2, height: 1.5, depth: 2,
-                }, scene);
+                const base = BABYLON.MeshBuilder.CreateBox(
+                    def.name + "_base",
+                    {
+                        width: 2,
+                        height: 1.5,
+                        depth: 2,
+                    },
+                    scene
+                );
                 base.position = def.pos.add(new BABYLON.Vector3(0, 0.75, 0));
                 const baseMat = new BABYLON.StandardMaterial(def.name + "_baseMat", scene);
                 baseMat.diffuseColor = BABYLON.Color3.Lerp(new BABYLON.Color3(0.25, 0.25, 0.35), def.color, 0.3);
@@ -646,9 +673,15 @@
                 base.material = baseMat;
 
                 // Moving arm / tool head
-                const arm = BABYLON.MeshBuilder.CreateBox(def.name + "_arm", {
-                    width: 0.4, height: 2, depth: 0.4,
-                }, scene);
+                const arm = BABYLON.MeshBuilder.CreateBox(
+                    def.name + "_arm",
+                    {
+                        width: 0.4,
+                        height: 2,
+                        depth: 0.4,
+                    },
+                    scene
+                );
                 arm.position = def.pos.add(new BABYLON.Vector3(0, 2.5, 0));
                 const armMat = new BABYLON.StandardMaterial(def.name + "_armMat", scene);
                 armMat.diffuseColor = def.color;
@@ -665,14 +698,7 @@
 
             function createStationCamera(name, stationPos, vp, scene) {
                 const target = stationPos.add(new BABYLON.Vector3(0, 1.5, 0));
-                const cam = new BABYLON.ArcRotateCamera(
-                    name + "_cam",
-                    Math.PI / 2,
-                    Math.PI / 3,
-                    8,
-                    target,
-                    scene,
-                );
+                const cam = new BABYLON.ArcRotateCamera(name + "_cam", Math.PI / 2, Math.PI / 3, 8, target, scene);
                 cam.viewport = new BABYLON.Viewport(vp.x, vp.y, vp.w, vp.h);
                 return cam;
             }
@@ -828,7 +854,9 @@
                                     if (item.uri) this._instanceUris.push(item.uri);
                                 }
                             }
-                        } catch { /* skip */ }
+                        } catch {
+                            /* skip */
+                        }
                     }
 
                     log(`Tool panel: ${this._tools.length} tools, ${this._instanceUris.length} instance URIs`, "dim");
@@ -857,8 +885,10 @@
                     header.addEventListener("mousedown", (e) => {
                         if (e.target === closeBtn) return;
                         this._dragState = {
-                            startX: e.clientX, startY: e.clientY,
-                            origLeft: panel.offsetLeft, origTop: panel.offsetTop,
+                            startX: e.clientX,
+                            startY: e.clientY,
+                            origLeft: panel.offsetLeft,
+                            origTop: panel.offsetTop,
                         };
                         panel.style.right = "auto";
                         panel.style.left = panel.offsetLeft + "px";
@@ -866,10 +896,12 @@
                     });
                     document.addEventListener("mousemove", (e) => {
                         if (!this._dragState) return;
-                        panel.style.left = (this._dragState.origLeft + e.clientX - this._dragState.startX) + "px";
-                        panel.style.top = (this._dragState.origTop + e.clientY - this._dragState.startY) + "px";
+                        panel.style.left = this._dragState.origLeft + e.clientX - this._dragState.startX + "px";
+                        panel.style.top = this._dragState.origTop + e.clientY - this._dragState.startY + "px";
                     });
-                    document.addEventListener("mouseup", () => { this._dragState = null; });
+                    document.addEventListener("mouseup", () => {
+                        this._dragState = null;
+                    });
 
                     // Body
                     const body = document.createElement("div");
@@ -900,9 +932,7 @@
                         for (const tool of this._tools) {
                             const item = document.createElement("div");
                             item.className = "tool-item";
-                            item.innerHTML =
-                                `<div class="tool-item-name">${escHtml(tool.name)}</div>` +
-                                `<div class="tool-item-desc">${escHtml(tool.description || "")}</div>`;
+                            item.innerHTML = `<div class="tool-item-name">${escHtml(tool.name)}</div>` + `<div class="tool-item-desc">${escHtml(tool.description || "")}</div>`;
                             item.addEventListener("click", () => this._selectTool(tool));
                             sec.appendChild(item);
                         }
@@ -938,7 +968,10 @@
 
                 async _readResource(uri, parentEl) {
                     const existing = parentEl.nextElementSibling;
-                    if (existing && existing.classList.contains("resource-content")) { existing.remove(); return; }
+                    if (existing && existing.classList.contains("resource-content")) {
+                        existing.remove();
+                        return;
+                    }
                     try {
                         const result = await this._client.readResource(uri);
                         const el = document.createElement("div");
@@ -1048,7 +1081,8 @@
                             field.appendChild(lbl);
                             if (isUri && this._instanceUris.length > 0) {
                                 const sel = document.createElement("select");
-                                sel.style.cssText = "width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.72rem;padding:4px 8px;";
+                                sel.style.cssText =
+                                    "width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.72rem;padding:4px 8px;";
                                 for (const u of this._instanceUris) {
                                     const o = document.createElement("option");
                                     o.value = u;
@@ -1060,7 +1094,8 @@
                                 fieldEls[propName] = { el: sel, type: "string" };
                             } else if (propDef.enum) {
                                 const sel = document.createElement("select");
-                                sel.style.cssText = "width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.72rem;padding:4px 8px;";
+                                sel.style.cssText =
+                                    "width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.72rem;padding:4px 8px;";
                                 for (const v of propDef.enum) {
                                     const o = document.createElement("option");
                                     o.value = v;
@@ -1106,11 +1141,23 @@
                     const args = {};
                     for (const [name, { el, type }] of Object.entries(fieldEls)) {
                         if (type === "boolean") args[name] = el.checked;
-                        else if (type === "number") { const v = el.value.trim(); if (v !== "") args[name] = parseFloat(v); }
-                        else if (type === "json") {
+                        else if (type === "number") {
                             const v = el.value.trim();
-                            if (v !== "") { try { args[name] = JSON.parse(v); } catch (e) { log(`Invalid JSON: ${e}`, "error"); return; } }
-                        } else { const v = el.value.trim(); if (v !== "") args[name] = v; }
+                            if (v !== "") args[name] = parseFloat(v);
+                        } else if (type === "json") {
+                            const v = el.value.trim();
+                            if (v !== "") {
+                                try {
+                                    args[name] = JSON.parse(v);
+                                } catch (e) {
+                                    log(`Invalid JSON: ${e}`, "error");
+                                    return;
+                                }
+                            }
+                        } else {
+                            const v = el.value.trim();
+                            if (v !== "") args[name] = v;
+                        }
                     }
 
                     execBtn.disabled = true;
@@ -1131,8 +1178,11 @@
                             div.innerHTML = `<div class="tool-result-label">Result</div>`;
                             for (const ti of textItems) {
                                 const pre = document.createElement("pre");
-                                try { pre.textContent = JSON.stringify(JSON.parse(ti.text), null, 2); }
-                                catch { pre.textContent = ti.text; }
+                                try {
+                                    pre.textContent = JSON.stringify(JSON.parse(ti.text), null, 2);
+                                } catch {
+                                    pre.textContent = ti.text;
+                                }
                                 div.appendChild(pre);
                             }
                         } else {
@@ -1151,9 +1201,18 @@
                     }
                 }
 
-                show() { if (this._el) this._el.style.display = "flex"; }
-                hide() { if (this._el) this._el.style.display = "none"; }
-                destroy() { if (this._el) { this._el.remove(); this._el = null; } }
+                show() {
+                    if (this._el) this._el.style.display = "flex";
+                }
+                hide() {
+                    if (this._el) this._el.style.display = "none";
+                }
+                destroy() {
+                    if (this._el) {
+                        this._el.remove();
+                        this._el = null;
+                    }
+                }
             }
 
             // =========================================================
@@ -1193,9 +1252,7 @@
                                     serverInfo: { name: station.name, version: "1.0.0" },
                                     instructions:
                                         `You are connected to ${station.label} on the assembly line. ` +
-                                        (station.commissioned
-                                            ? `This station is a ${station.role}. ${station.description}`
-                                            : "This station has not been commissioned yet."),
+                                        (station.commissioned ? `This station is a ${station.role}. ${station.description}` : "This station has not been commissioned yet."),
                                 };
                             },
                         })
@@ -1297,8 +1354,7 @@
                     const header = document.createElement("div");
                     header.className = "station-card-header";
                     header.innerHTML =
-                        `<span class="station-dot" style="background:${station.def.hexColor}"></span>` +
-                        `<span class="station-card-name">${escHtml(station.label)}</span>`;
+                        `<span class="station-dot" style="background:${station.def.hexColor}"></span>` + `<span class="station-card-name">${escHtml(station.label)}</span>`;
                     card.appendChild(header);
 
                     const roleEl = document.createElement("div");
@@ -1374,7 +1430,10 @@
                 document.body.appendChild(overlay);
                 pushModal();
 
-                function closeDialog() { overlay.remove(); popModal(); }
+                function closeDialog() {
+                    overlay.remove();
+                    popModal();
+                }
 
                 document.getElementById("comm-cancel").addEventListener("click", closeDialog);
 
@@ -1385,7 +1444,10 @@
                 document.getElementById("comm-apply").addEventListener("click", async () => {
                     const role = document.getElementById("comm-role").value.trim();
                     const desc = document.getElementById("comm-desc").value.trim();
-                    if (!role) { alert("Please enter a machine role."); return; }
+                    if (!role) {
+                        alert("Please enter a machine role.");
+                        return;
+                    }
 
                     closeDialog();
                     await commissionStation(station, role, desc);
