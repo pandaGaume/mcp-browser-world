@@ -1,7 +1,7 @@
 # MCP Browser World
 
 A **Model Context Protocol (MCP)** framework that bridges LLM agents to browser-based
-3D engines. It exposes scene objects (cameras, lights, meshes) as MCP resources and
+3D engines. It exposes scene objects (cameras, lights, meshes, sensors,..) as MCP resources and
 tools, letting clients like **Claude Code** or **MCP Inspector** inspect and
 manipulate a live 3D scene through a standard JSON-RPC interface.
 
