@@ -480,13 +480,8 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                 const lidarOpts = args["lidarOptions"] as { beams?: number; angularResolution?: number; encoding?: "uint16" | "float32"; maxRange?: number } | undefined;
                 // Omitted → empty array (raw capture, no filters).
                 // Callers must explicitly name the filters they want.
-                const filterNames: string[] = rawFilters === undefined
-                    ? []
-                    : Array.isArray(rawFilters)
-                        ? rawFilters as string[]
-                        : typeof rawFilters === "string"
-                            ? [rawFilters]
-                            : [];
+                const filterNames: string[] =
+                    rawFilters === undefined ? [] : Array.isArray(rawFilters) ? (rawFilters as string[]) : typeof rawFilters === "string" ? [rawFilters] : [];
 
                 try {
                     const engine = this._scene.getEngine();
@@ -540,9 +535,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
 
                     // Check if any requested filter is a text filter (e.g. ASCII).
                     // Text filters produce a string representation instead of an image.
-                    const textFilterEntry = filterNames
-                        .map((n) => this.imageFiltering.getFilter(n))
-                        .find((f) => f !== undefined && isTextSnapshotFilter(f));
+                    const textFilterEntry = filterNames.map((n) => this.imageFiltering.getFilter(n)).find((f) => f !== undefined && isTextSnapshotFilter(f));
 
                     if (textFilterEntry) {
                         // Run any non-text image filters first, then produce text.
@@ -550,13 +543,17 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                             const f = this.imageFiltering.getFilter(n);
                             return f !== undefined && !isTextSnapshotFilter(f);
                         });
-                        const filtered = imageFilterNames.length > 0
-                            ? await this.imageFiltering.applyFiltersAsync(imageData, imageFilterNames, ctx)
-                            : imageData;
+                        const filtered = imageFilterNames.length > 0 ? await this.imageFiltering.applyFiltersAsync(imageData, imageFilterNames, ctx) : imageData;
                         const text = await this.imageFiltering.applyAsTextAsync(filtered, textFilterEntry.name, ctx);
                         const content: McpToolResult["content"] = [{ type: "text", text }];
                         if (includeDepth) {
-                            const lidar = await this._readLidarAsync(camera, lidarOpts?.beams ?? 16, lidarOpts?.angularResolution ?? 1.0, lidarOpts?.encoding ?? "uint16", lidarOpts?.maxRange ?? 100);
+                            const lidar = await this._readLidarAsync(
+                                camera,
+                                lidarOpts?.beams ?? 16,
+                                lidarOpts?.angularResolution ?? 1.0,
+                                lidarOpts?.encoding ?? "uint16",
+                                lidarOpts?.maxRange ?? 100
+                            );
                             content.push({ type: "text", text: JSON.stringify(lidar) });
                         }
                         return { content };
@@ -569,7 +566,13 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
                     const base64 = await this.imageFiltering.imageDataToBase64(filtered);
                     const content: McpToolResult["content"] = [{ type: "image", data: base64, mimeType: "image/png" }];
                     if (includeDepth) {
-                        const lidar = await this._readLidarAsync(camera, lidarOpts?.beams ?? 16, lidarOpts?.angularResolution ?? 1.0, lidarOpts?.encoding ?? "uint16", lidarOpts?.maxRange ?? 100);
+                        const lidar = await this._readLidarAsync(
+                            camera,
+                            lidarOpts?.beams ?? 16,
+                            lidarOpts?.angularResolution ?? 1.0,
+                            lidarOpts?.encoding ?? "uint16",
+                            lidarOpts?.maxRange ?? 100
+                        );
                         content.push({ type: "text", text: JSON.stringify(lidar) });
                     }
                     return { content };
@@ -988,13 +991,7 @@ export class McpCameraAdapter extends McpAdapterBase implements IHasImageFilteri
      * Reads the depth buffer and produces a lidar result for the given camera.
      * Shared by `camera_lidar` and `camera_snapshot` (when `depth: true`).
      */
-    private async _readLidarAsync(
-        camera: Camera,
-        beams: number,
-        angularResolution: number,
-        encoding: "uint16" | "float32",
-        maxRange: number,
-    ): Promise<ILidarResult> {
+    private async _readLidarAsync(camera: Camera, beams: number, angularResolution: number, encoding: "uint16" | "float32", maxRange: number): Promise<ILidarResult> {
         const engine = this._scene.getEngine();
         const vFovRad = camera.fov;
         const aspectRatio = engine.getAspectRatio(camera);

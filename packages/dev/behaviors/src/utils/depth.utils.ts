@@ -22,15 +22,7 @@
  * @param far      Camera far plane distance in meters.
  * @returns        `Float32Array` of length `cols × rows`, values in meters.
  */
-export function downsampleDepthGrid(
-    depth: Float32Array,
-    srcW: number,
-    srcH: number,
-    cols: number,
-    rows: number,
-    near: number,
-    far: number,
-): Float32Array {
+export function downsampleDepthGrid(depth: Float32Array, srcW: number, srcH: number, cols: number, rows: number, near: number, far: number): Float32Array {
     const grid = new Float32Array(cols * rows);
     const cellW = srcW / cols;
     const cellH = srcH / rows;
@@ -113,7 +105,7 @@ export function encodeDepthGrid(
     hFov: number,
     angularResolution: number,
     encoding: "uint16" | "float32",
-    maxRange: number,
+    maxRange: number
 ): ILidarResult {
     let bytes: Uint8Array;
     let unit: "mm" | "m";
