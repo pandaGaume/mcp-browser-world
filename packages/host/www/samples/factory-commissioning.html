@@ -1,0 +1,1451 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>MCP — Factory Commissioning</title>
+        <link rel="stylesheet" href="css/sample.css" />
+        <style>
+            /* ── Viewport labels ──────────────────────────────────── */
+            .viewport-labels {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 1;
+            }
+            .viewport-label {
+                position: absolute;
+                font-family: var(--mono);
+                font-size: 0.7rem;
+                font-weight: 700;
+                letter-spacing: 0.06em;
+                text-transform: uppercase;
+                color: var(--text);
+                background: rgba(30, 30, 46, 0.7);
+                padding: 3px 10px;
+                border-radius: 0 0 6px 0;
+            }
+            .viewport-label.mid {
+                border-radius: 0 0 6px 6px;
+            }
+            .viewport-label.right {
+                border-radius: 0 0 0 6px;
+            }
+
+            /* ── Viewport grid borders ────────────────────────────── */
+            .viewport-borders {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                pointer-events: none;
+                z-index: 1;
+            }
+            .viewport-borders .vb-v {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                width: 1px;
+                background: var(--muted);
+            }
+
+            /* ── Station cards ────────────────────────────────────── */
+            .station-card {
+                padding: 10px 12px;
+                border: 1px solid var(--border);
+                border-radius: 6px;
+                margin-bottom: 10px;
+            }
+            .station-card-header {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                margin-bottom: 4px;
+            }
+            .station-dot {
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                flex-shrink: 0;
+            }
+            .station-card-name {
+                font-family: var(--mono);
+                font-size: 0.8rem;
+                font-weight: 700;
+                color: var(--text);
+            }
+            .station-card-role {
+                font-family: var(--mono);
+                font-size: 0.68rem;
+                color: var(--muted);
+                margin-bottom: 4px;
+                font-style: italic;
+            }
+            .station-card-status {
+                font-family: var(--mono);
+                font-size: 0.68rem;
+                color: var(--muted);
+                margin-bottom: 6px;
+            }
+            .station-card-status.commissioned {
+                color: var(--green);
+            }
+            .station-card .btn-row {
+                display: flex;
+                gap: 6px;
+            }
+            .station-card button {
+                font-size: 0.7rem;
+                padding: 3px 10px;
+            }
+
+            /* ── Commissioning dialog (modal overlay) ─────────────── */
+            .commission-overlay {
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.6);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .commission-dialog {
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                padding: 20px 24px;
+                width: 440px;
+                max-width: 90vw;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            }
+            .commission-dialog h2 {
+                font-family: var(--mono);
+                font-size: 0.9rem;
+                color: var(--accent);
+                margin-bottom: 14px;
+            }
+            .commission-dialog .field {
+                margin-bottom: 10px;
+            }
+            .commission-dialog label {
+                display: block;
+                font-family: var(--mono);
+                font-size: 0.72rem;
+                color: var(--text);
+                margin-bottom: 3px;
+            }
+            .commission-dialog input,
+            .commission-dialog textarea {
+                width: 100%;
+                box-sizing: border-box;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 0.75rem;
+                padding: 6px 10px;
+            }
+            .commission-dialog textarea {
+                min-height: 60px;
+                resize: vertical;
+            }
+            .commission-dialog .btn-row {
+                margin-top: 14px;
+                display: flex;
+                gap: 8px;
+                justify-content: flex-end;
+            }
+
+            /* ── Tool panel (floating modal) — same as babylon-client ─ */
+            .tool-panel {
+                position: fixed;
+                z-index: 100;
+                width: 700px;
+                height: 500px;
+                min-width: 400px;
+                min-height: 200px;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+                overflow: hidden;
+                resize: both;
+            }
+            .tool-panel-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 8px 14px;
+                background: var(--surface);
+                cursor: grab;
+                user-select: none;
+                border-bottom: 1px solid var(--border);
+            }
+            .tool-panel-header:active { cursor: grabbing; }
+            .tool-panel-title {
+                font-family: var(--mono);
+                font-size: 0.78rem;
+                font-weight: 700;
+                color: var(--accent);
+            }
+            .tool-panel-close {
+                background: none;
+                border: none;
+                color: var(--muted);
+                font-size: 1rem;
+                cursor: pointer;
+                padding: 2px 6px;
+            }
+            .tool-panel-close:hover { color: var(--red); }
+            .tool-panel-body {
+                display: flex;
+                flex: 1;
+                overflow: hidden;
+                min-height: 0;
+            }
+            .tool-panel-left {
+                width: 240px;
+                min-width: 240px;
+                overflow-y: auto;
+                padding: 10px 12px;
+                border-right: 1px solid var(--border);
+            }
+            .tool-panel-right {
+                flex: 1;
+                min-width: 0;
+                width: 0;
+                overflow-x: hidden;
+                overflow-y: auto;
+                padding: 10px 14px;
+                box-sizing: border-box;
+            }
+            .tool-panel-section { margin-bottom: 12px; }
+            .tool-panel-section-title {
+                font-family: var(--mono);
+                font-size: 0.72rem;
+                font-weight: 700;
+                color: var(--muted);
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                margin-bottom: 6px;
+            }
+            .resource-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 4px 8px;
+                border-radius: 4px;
+                font-family: var(--mono);
+                font-size: 0.72rem;
+                color: var(--text);
+            }
+            .resource-item:hover { background: var(--surface); }
+            .resource-item .res-uri {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                flex: 1;
+                margin-right: 8px;
+            }
+            .resource-item .res-read-btn {
+                font-size: 0.66rem;
+                padding: 2px 8px;
+                flex-shrink: 0;
+            }
+            .resource-content {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                padding: 6px 8px;
+                margin: 4px 0 8px 0;
+                font-family: var(--mono);
+                font-size: 0.66rem;
+                color: var(--text);
+                max-height: 120px;
+                overflow-y: auto;
+                white-space: pre-wrap;
+                word-break: break-all;
+            }
+            .tool-item {
+                padding: 6px 8px;
+                border-radius: 4px;
+                cursor: pointer;
+                transition: background 0.15s;
+            }
+            .tool-item:hover { background: var(--surface); }
+            .tool-item.active {
+                background: var(--surface);
+                border-left: 3px solid var(--accent);
+            }
+            .tool-item-name {
+                font-family: var(--mono);
+                font-size: 0.74rem;
+                font-weight: 600;
+                color: var(--blue);
+            }
+            .tool-item-desc {
+                font-family: var(--mono);
+                font-size: 0.66rem;
+                color: var(--muted);
+                margin-top: 2px;
+            }
+            .tool-form {
+                padding: 10px;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 6px;
+            }
+            .tool-form-title {
+                font-family: var(--mono);
+                font-size: 0.74rem;
+                font-weight: 700;
+                color: var(--accent);
+                margin-bottom: 8px;
+            }
+            .param-field { margin-bottom: 8px; }
+            .param-field label {
+                display: block;
+                font-family: var(--mono);
+                font-size: 0.68rem;
+                color: var(--text);
+                margin-bottom: 2px;
+            }
+            .param-field label .required { color: var(--red); }
+            .param-field input[type="text"],
+            .param-field input[type="number"],
+            .param-field textarea {
+                width: 100%;
+                box-sizing: border-box;
+                background: var(--bg);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                color: var(--text);
+                font-family: var(--mono);
+                font-size: 0.72rem;
+                padding: 4px 8px;
+            }
+            .param-field textarea { min-height: 50px; resize: vertical; }
+            .param-field .param-desc {
+                font-size: 0.62rem;
+                color: var(--muted);
+                margin-top: 2px;
+            }
+            .param-field-checkbox {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .tool-form .btn-row {
+                margin-top: 8px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .tool-form .btn-row button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            .tool-spinner {
+                display: none;
+                width: 14px;
+                height: 14px;
+                border: 2px solid var(--border);
+                border-top-color: var(--accent);
+                border-radius: 50%;
+                animation: tool-spin 0.6s linear infinite;
+            }
+            .tool-spinner.visible { display: inline-block; }
+            @keyframes tool-spin { to { transform: rotate(360deg); } }
+            .tool-result-container { width: 100%; }
+            .tool-result { margin-top: 12px; }
+            .tool-result .tool-result-label {
+                font-family: var(--mono);
+                font-size: 0.72rem;
+                font-weight: 700;
+                color: var(--green);
+                margin-bottom: 6px;
+            }
+            .tool-result.error .tool-result-label { color: var(--red); }
+            .tool-result pre {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 4px;
+                padding: 8px 10px;
+                font-family: var(--mono);
+                font-size: 0.68rem;
+                color: var(--text);
+                overflow-x: auto;
+                white-space: pre-wrap;
+                word-break: break-all;
+                max-height: 200px;
+                overflow-y: auto;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1 id="page-title">MCP — Factory Commissioning</h1>
+            <span id="status-badge" class="badge disconnected">Idle</span>
+        </header>
+
+        <div class="layout">
+            <!-- Left panel: station cards -->
+            <aside class="left-panel panel">
+                <div class="panel-title">Assembly Line</div>
+                <div class="panel-body" id="station-list"></div>
+            </aside>
+
+            <!-- Right column -->
+            <div class="right-column">
+                <!-- Top: Babylon scene with 3-column viewports -->
+                <div class="scene-panel">
+                    <canvas id="renderCanvas"></canvas>
+                    <div class="viewport-borders">
+                        <div class="vb-v" style="left: 33.33%"></div>
+                        <div class="vb-v" style="left: 66.66%"></div>
+                    </div>
+                    <div class="viewport-labels" id="viewport-labels"></div>
+                </div>
+
+                <!-- Console -->
+                <section class="console-panel panel">
+                    <div class="panel-title">Console</div>
+                    <div class="panel-body" id="console-output"></div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Tool panel container -->
+        <div id="tool-panel-container"></div>
+
+        <!-- Babylon.js -->
+        <script src="https://cdn.babylonjs.com/babylon.js"></script>
+        <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+        <!-- MCP bundles (order matters: core → server → filters → babylon) -->
+        <script src="/bundle/mcp-core.js"></script>
+        <script src="/bundle/mcp-server.js"></script>
+        <script src="/bundle/mcp-filters.js"></script>
+        <script src="/bundle/mcp-babylon.js"></script>
+
+        <script>
+            "use strict";
+
+            // =========================================================
+            // Console helpers
+            // =========================================================
+            const consoleEl = document.getElementById("console-output");
+
+            function log(msg, level = "info") {
+                const ts = new Date().toLocaleTimeString("en", {
+                    hour12: false,
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                });
+                const div = document.createElement("div");
+                div.className = `log-line ${level}`;
+                div.innerHTML = `<span class="ts">${ts}</span>  <span class="msg">${escHtml(msg)}</span>`;
+                consoleEl.appendChild(div);
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+
+            function escHtml(s) {
+                return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            }
+
+            // =========================================================
+            // Status badge
+            // =========================================================
+            const badgeEl = document.getElementById("status-badge");
+
+            function setStatus(state) {
+                badgeEl.className = `badge ${state}`;
+                badgeEl.textContent =
+                    {
+                        disconnected: "Idle",
+                        connecting: "Starting\u2026",
+                        connected: "Running",
+                    }[state] ?? state;
+            }
+
+            // =========================================================
+            // MCP imports
+            // =========================================================
+            const {
+                McpServerBuilder, LoopbackTransport, McpClient,
+                McpGrammarStore, McpGrammarBehavior,
+            } = window.McpServer;
+
+            const {
+                McpCameraAdapter, McpCameraBehavior,
+                McpMeshAdapter, McpMeshBehavior,
+            } = window.McpBabylon;
+
+            // =========================================================
+            // Babylon.js engine + scene
+            // =========================================================
+            const canvas = document.getElementById("renderCanvas");
+            const engine = new BABYLON.Engine(canvas, true, {
+                preserveDrawingBuffer: true,
+                stencil: true,
+            });
+            const scene = new BABYLON.Scene(engine);
+
+            // =========================================================
+            // Station definitions
+            // =========================================================
+            const STATION_DEFS = [
+                {
+                    name: "station-1",
+                    label: "Station 1",
+                    pos: new BABYLON.Vector3(-8, 0, 0),
+                    color: new BABYLON.Color3(0.9, 0.25, 0.25),
+                    hexColor: "#e64040",
+                    defaultRole: "resistance spot welder",
+                    defaultDesc: "Welds chassis joints at the first position of the body-in-white line. The arm mesh represents the welding electrode holder.",
+                    // Optional: model: { dir: "/3dmodels/", file: "welder.glb", scale: 2 },
+                },
+                {
+                    name: "station-2",
+                    label: "Station 2",
+                    pos: new BABYLON.Vector3(0, 0, 0),
+                    color: new BABYLON.Color3(0.25, 0.8, 0.3),
+                    hexColor: "#40cc4d",
+                    defaultRole: "hydraulic stamping press",
+                    defaultDesc: "Stamps sheet metal panels into shape. The moving mesh is the upper die platen, position controls the press stroke.",
+                    // Optional: model: { dir: "/3dmodels/", file: "press.glb", scale: 2 },
+                },
+                {
+                    name: "station-3",
+                    label: "Station 3",
+                    pos: new BABYLON.Vector3(8, 0, 0),
+                    color: new BABYLON.Color3(0.25, 0.5, 0.95),
+                    hexColor: "#4080f2",
+                    defaultRole: "visual quality inspector",
+                    defaultDesc: "Inspects finished parts for surface defects using a multi-axis camera arm. Camera position controls the inspection viewpoint.",
+                    // Optional: model: { dir: "/3dmodels/", file: "inspector.glb", scale: 2 },
+                },
+            ];
+
+            // 3-column viewport layout
+            const VIEWPORTS = [
+                { x: 0, y: 0, w: 1 / 3, h: 1 },
+                { x: 1 / 3, y: 0, w: 1 / 3, h: 1 },
+                { x: 2 / 3, y: 0, w: 1 / 3, h: 1 },
+            ];
+
+            // =========================================================
+            // Build factory scene
+            // =========================================================
+            function createScene(scene) {
+                // Lighting
+                const hemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+                hemi.intensity = 0.5;
+
+                const sun = new BABYLON.DirectionalLight("sun", new BABYLON.Vector3(-1, -2, -1).normalize(), scene);
+                sun.intensity = 0.8;
+
+                // Factory floor
+                const floor = BABYLON.MeshBuilder.CreateGround("floor", { width: 30, height: 14 }, scene);
+                const fMat = new BABYLON.StandardMaterial("floorMat", scene);
+                fMat.diffuseColor = new BABYLON.Color3(0.15, 0.15, 0.22);
+                fMat.specularColor = BABYLON.Color3.Black();
+                floor.material = fMat;
+
+                // Conveyor line (thin dark box connecting stations)
+                const conveyor = BABYLON.MeshBuilder.CreateBox("conveyor", { width: 24, height: 0.08, depth: 1.2 }, scene);
+                conveyor.position.y = 0.04;
+                const cMat = new BABYLON.StandardMaterial("conveyorMat", scene);
+                cMat.diffuseColor = new BABYLON.Color3(0.2, 0.2, 0.28);
+                cMat.specularColor = BABYLON.Color3.Black();
+                conveyor.material = cMat;
+            }
+
+            /**
+             * Builds a station's 3D representation.
+             *
+             * If `def.model` is provided ({ dir, file, scale? }), loads the glTF/GLB
+             * model and re-parents it under a named root at the station position.
+             * If the model is missing or fails to load, falls back to simple
+             * box+arm+sphere primitives.
+             *
+             * Every mesh is renamed with the station name prefix so the mesh
+             * adapter's URI contains the station identity.
+             */
+            async function buildStationAsync(def, scene) {
+                // ── Try loading a glTF model ────────────────────────────
+                if (def.model) {
+                    try {
+                        log(`${def.label}: loading model ${def.model.file}\u2026`, "dim");
+                        const result = await BABYLON.SceneLoader.ImportMeshAsync(
+                            "", def.model.dir, def.model.file, scene,
+                        );
+
+                        // Wrap under a named root
+                        const root = new BABYLON.TransformNode(def.name, scene);
+                        root.position = def.pos;
+
+                        for (const m of result.meshes) {
+                            if (!m.parent || m.parent === scene) {
+                                m.parent = root;
+                            }
+                            // Prefix mesh IDs so they contain the station name
+                            m.id = def.name + "_" + m.id;
+                            m.name = def.name + "_" + m.name;
+                        }
+
+                        // Auto-scale to a target height
+                        const desiredSize = def.model.scale ?? 3;
+                        const bounds = root.getHierarchyBoundingVectors(true);
+                        const size = bounds.max.subtract(bounds.min);
+                        const maxDim = Math.max(size.x, size.y, size.z);
+                        if (maxDim > 0) root.scaling.setAll(desiredSize / maxDim);
+
+                        // Apply color tint
+                        for (const m of result.meshes) {
+                            if (m.material) {
+                                const cloned = m.material.clone(def.name + "_" + m.material.name);
+                                if (cloned.albedoColor) {
+                                    cloned.albedoColor = BABYLON.Color3.Lerp(cloned.albedoColor, def.color, 0.3);
+                                } else if (cloned.diffuseColor) {
+                                    cloned.diffuseColor = BABYLON.Color3.Lerp(cloned.diffuseColor, def.color, 0.3);
+                                }
+                                m.material = cloned;
+                            }
+                        }
+
+                        log(`${def.label}: model loaded (${result.meshes.length} meshes)`, "ok");
+                        return { root, meshes: result.meshes };
+                    } catch (e) {
+                        log(`${def.label}: model load failed (${e}), using fallback primitives`, "warn");
+                    }
+                }
+
+                // ── Fallback: simple primitives ─────────────────────────
+                return buildStationFallback(def, scene);
+            }
+
+            /** Creates simple box+arm+sphere primitives as fallback geometry. */
+            function buildStationFallback(def, scene) {
+                // Base pedestal
+                const base = BABYLON.MeshBuilder.CreateBox(def.name + "_base", {
+                    width: 2, height: 1.5, depth: 2,
+                }, scene);
+                base.position = def.pos.add(new BABYLON.Vector3(0, 0.75, 0));
+                const baseMat = new BABYLON.StandardMaterial(def.name + "_baseMat", scene);
+                baseMat.diffuseColor = BABYLON.Color3.Lerp(new BABYLON.Color3(0.25, 0.25, 0.35), def.color, 0.3);
+                baseMat.specularColor = BABYLON.Color3.Black();
+                base.material = baseMat;
+
+                // Moving arm / tool head
+                const arm = BABYLON.MeshBuilder.CreateBox(def.name + "_arm", {
+                    width: 0.4, height: 2, depth: 0.4,
+                }, scene);
+                arm.position = def.pos.add(new BABYLON.Vector3(0, 2.5, 0));
+                const armMat = new BABYLON.StandardMaterial(def.name + "_armMat", scene);
+                armMat.diffuseColor = def.color;
+                armMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+                arm.material = armMat;
+
+                // Tool tip (small sphere at arm end)
+                const tip = BABYLON.MeshBuilder.CreateSphere(def.name + "_tip", { diameter: 0.5 }, scene);
+                tip.position = def.pos.add(new BABYLON.Vector3(0, 3.6, 0));
+                tip.material = armMat;
+
+                return { base, arm, tip };
+            }
+
+            function createStationCamera(name, stationPos, vp, scene) {
+                const target = stationPos.add(new BABYLON.Vector3(0, 1.5, 0));
+                const cam = new BABYLON.ArcRotateCamera(
+                    name + "_cam",
+                    Math.PI / 2,
+                    Math.PI / 3,
+                    8,
+                    target,
+                    scene,
+                );
+                cam.viewport = new BABYLON.Viewport(vp.x, vp.y, vp.w, vp.h);
+                return cam;
+            }
+
+            // =========================================================
+            // Station object
+            // =========================================================
+            class Station {
+                constructor(def, meshes, camera) {
+                    this.name = def.name;
+                    this.label = def.label;
+                    this.def = def;
+                    this.meshes = meshes;
+                    this.camera = camera;
+                    this.commissioned = false;
+                    this.role = "";
+                    this.description = "";
+                    // MCP state (set during init)
+                    this.client = null;
+                    this.server = null;
+                    this.toolPanel = null;
+                }
+            }
+
+            // =========================================================
+            // Build everything (async — models may need loading)
+            // =========================================================
+            createScene(scene);
+
+            const stations = [];
+            const labelsEl = document.getElementById("viewport-labels");
+
+            async function buildAllStations() {
+                for (let i = 0; i < STATION_DEFS.length; i++) {
+                    const def = STATION_DEFS[i];
+                    const meshes = await buildStationAsync(def, scene);
+                    const cam = createStationCamera(def.name, def.pos, VIEWPORTS[i], scene);
+                    stations.push(new Station(def, meshes, cam));
+
+                    // Viewport label
+                    const lbl = document.createElement("div");
+                    lbl.className = "viewport-label" + (i === 1 ? " mid" : i === 2 ? " right" : "");
+                    lbl.style.top = "0";
+                    if (i === 0) lbl.style.left = "0";
+                    else if (i === 1) lbl.style.left = "33.33%";
+                    else lbl.style.right = "0";
+                    lbl.textContent = def.label;
+                    lbl.id = "vp-label-" + i;
+                    labelsEl.appendChild(lbl);
+                }
+
+                scene.activeCameras = stations.map((s) => s.camera);
+            }
+
+            // ── Modal management — detach camera when dialogs are open ──
+            let modalCount = 0;
+
+            function pushModal() {
+                modalCount++;
+                if (activeCamera) {
+                    activeCamera.detachControl();
+                    activeCamera = null;
+                }
+            }
+
+            function popModal() {
+                modalCount = Math.max(0, modalCount - 1);
+            }
+
+            // ���─ Viewport-aware camera input ──────────���───────────────
+            let activeCamera = null;
+
+            function getCameraUnderPointer(evt) {
+                const rect = canvas.getBoundingClientRect();
+                const nx = (evt.clientX - rect.left) / rect.width;
+                const ny = 1 - (evt.clientY - rect.top) / rect.height;
+                for (const st of stations) {
+                    const vp = st.camera.viewport;
+                    if (nx >= vp.x && nx < vp.x + vp.width && ny >= vp.y && ny < vp.y + vp.height) {
+                        return st.camera;
+                    }
+                }
+                return null;
+            }
+
+            canvas.addEventListener("pointermove", (evt) => {
+                if (modalCount > 0) return;
+                const cam = getCameraUnderPointer(evt);
+                if (cam && cam !== activeCamera) {
+                    if (activeCamera) activeCamera.detachControl();
+                    cam.attachControl(canvas, true);
+                    activeCamera = cam;
+                }
+            });
+
+            canvas.addEventListener("pointerleave", () => {
+                if (activeCamera) {
+                    activeCamera.detachControl();
+                    activeCamera = null;
+                }
+            });
+
+            window.addEventListener("resize", () => engine.resize());
+
+            // =========================================================
+            // McpToolPanel (simplified from babylon-client.html)
+            // =========================================================
+            class McpToolPanel {
+                constructor(client, container, options) {
+                    this._client = client;
+                    this._container = container;
+                    this._options = options;
+                    this._serverName = options.serverName;
+                    this._onClose = options.onClose || (() => {});
+                    this._el = null;
+                    this._resources = [];
+                    this._tools = [];
+                    this._instanceUris = [];
+                    this._dragState = null;
+                }
+
+                async initialize() {
+                    try {
+                        this._resources = await this._client.listResources();
+                    } catch (e) {
+                        log(`Failed to list resources: ${e}`, "error");
+                        this._resources = [];
+                    }
+
+                    try {
+                        this._tools = await this._client.listTools();
+                    } catch (e) {
+                        log(`Failed to list tools: ${e}`, "error");
+                        this._tools = [];
+                    }
+
+                    // Discover instance URIs.
+                    // Start with every root resource URI itself (e.g. mcp://grammar,
+                    // babylon://mesh, babylon://camera) so tools from every namespace
+                    // have a valid URI in the dropdown.
+                    this._instanceUris = this._resources.map((r) => r.uri);
+
+                    // Then read root resources to discover individual instances
+                    // (e.g. babylon://mesh/station-1_base, babylon://camera/station-1_cam).
+                    for (const res of this._resources) {
+                        try {
+                            const content = await this._client.readResource(res.uri);
+                            const raw = typeof content === "string" ? content : content?.text;
+                            if (!raw) continue;
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                for (const item of parsed) {
+                                    if (item.uri) this._instanceUris.push(item.uri);
+                                }
+                            }
+                        } catch { /* skip */ }
+                    }
+
+                    log(`Tool panel: ${this._tools.length} tools, ${this._instanceUris.length} instance URIs`, "dim");
+                    this._buildDOM();
+                    this.show();
+                }
+
+                _buildDOM() {
+                    const panel = document.createElement("div");
+                    panel.className = "tool-panel";
+                    panel.style.top = "80px";
+                    panel.style.right = "40px";
+
+                    // Header (draggable)
+                    const header = document.createElement("div");
+                    header.className = "tool-panel-header";
+                    header.innerHTML = `<span class="tool-panel-title">${escHtml(this._serverName)} — Tools</span>`;
+                    const closeBtn = document.createElement("button");
+                    closeBtn.className = "tool-panel-close";
+                    closeBtn.textContent = "\u2715";
+                    closeBtn.addEventListener("click", () => this._onClose());
+                    header.appendChild(closeBtn);
+                    panel.appendChild(header);
+
+                    // Drag logic
+                    header.addEventListener("mousedown", (e) => {
+                        if (e.target === closeBtn) return;
+                        this._dragState = {
+                            startX: e.clientX, startY: e.clientY,
+                            origLeft: panel.offsetLeft, origTop: panel.offsetTop,
+                        };
+                        panel.style.right = "auto";
+                        panel.style.left = panel.offsetLeft + "px";
+                        e.preventDefault();
+                    });
+                    document.addEventListener("mousemove", (e) => {
+                        if (!this._dragState) return;
+                        panel.style.left = (this._dragState.origLeft + e.clientX - this._dragState.startX) + "px";
+                        panel.style.top = (this._dragState.origTop + e.clientY - this._dragState.startY) + "px";
+                    });
+                    document.addEventListener("mouseup", () => { this._dragState = null; });
+
+                    // Body
+                    const body = document.createElement("div");
+                    body.className = "tool-panel-body";
+
+                    // Left pane
+                    const leftPane = document.createElement("div");
+                    leftPane.className = "tool-panel-left";
+
+                    if (this._resources.length > 0) {
+                        const sec = this._section("Resources");
+                        for (const res of this._resources) {
+                            const item = document.createElement("div");
+                            item.className = "resource-item";
+                            item.innerHTML = `<span class="res-uri" title="${escHtml(res.uri)}">${escHtml(res.uri)}</span>`;
+                            const btn = document.createElement("button");
+                            btn.className = "res-read-btn";
+                            btn.textContent = "Read";
+                            btn.addEventListener("click", () => this._readResource(res.uri, item));
+                            item.appendChild(btn);
+                            sec.appendChild(item);
+                        }
+                        leftPane.appendChild(sec);
+                    }
+
+                    if (this._tools.length > 0) {
+                        const sec = this._section("Tools");
+                        for (const tool of this._tools) {
+                            const item = document.createElement("div");
+                            item.className = "tool-item";
+                            item.innerHTML =
+                                `<div class="tool-item-name">${escHtml(tool.name)}</div>` +
+                                `<div class="tool-item-desc">${escHtml(tool.description || "")}</div>`;
+                            item.addEventListener("click", () => this._selectTool(tool));
+                            sec.appendChild(item);
+                        }
+                        leftPane.appendChild(sec);
+                    }
+
+                    body.appendChild(leftPane);
+
+                    const rightPane = document.createElement("div");
+                    rightPane.className = "tool-panel-right";
+                    this._formContainer = document.createElement("div");
+                    rightPane.appendChild(this._formContainer);
+                    this._resultContainer = document.createElement("div");
+                    this._resultContainer.className = "tool-result-container";
+                    rightPane.appendChild(this._resultContainer);
+                    this._leftPane = leftPane;
+                    body.appendChild(rightPane);
+                    panel.appendChild(body);
+
+                    this._el = panel;
+                    this._container.appendChild(panel);
+                }
+
+                _section(title) {
+                    const s = document.createElement("div");
+                    s.className = "tool-panel-section";
+                    const h = document.createElement("div");
+                    h.className = "tool-panel-section-title";
+                    h.textContent = title;
+                    s.appendChild(h);
+                    return s;
+                }
+
+                async _readResource(uri, parentEl) {
+                    const existing = parentEl.nextElementSibling;
+                    if (existing && existing.classList.contains("resource-content")) { existing.remove(); return; }
+                    try {
+                        const result = await this._client.readResource(uri);
+                        const el = document.createElement("div");
+                        el.className = "resource-content";
+                        const raw = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+                        el.textContent = raw;
+                        parentEl.insertAdjacentElement("afterend", el);
+                    } catch (e) {
+                        log(`Read resource failed: ${e}`, "error");
+                    }
+                }
+
+                /**
+                 * Picks the best default URI for a tool by matching the tool name
+                 * prefix to resource URI schemes. E.g. "grammar_set" → "mcp://grammar",
+                 * "mesh_set_position" → first babylon://mesh/* instance.
+                 */
+                _getDefaultUri(toolName) {
+                    if (!toolName || this._instanceUris.length === 0) return "";
+
+                    // Extract namespace prefix from tool name (e.g. "grammar" from "grammar_set")
+                    const prefix = toolName.split("_")[0];
+
+                    // First pass: find an instance URI whose scheme/path contains the prefix
+                    const match = this._instanceUris.find((u) => {
+                        const lower = u.toLowerCase();
+                        return lower.includes("://" + prefix) || lower.includes("/" + prefix);
+                    });
+                    if (match) return match;
+
+                    // Fallback: first URI
+                    return this._instanceUris[0];
+                }
+
+                _selectTool(tool) {
+                    this._leftPane.querySelectorAll(".tool-item").forEach((el) => el.classList.remove("active"));
+                    for (const item of this._leftPane.querySelectorAll(".tool-item")) {
+                        if (item.querySelector(".tool-item-name").textContent === tool.name) item.classList.add("active");
+                    }
+
+                    this._formContainer.innerHTML = "";
+                    this._resultContainer.innerHTML = "";
+
+                    const form = document.createElement("div");
+                    form.className = "tool-form";
+
+                    const title = document.createElement("div");
+                    title.className = "tool-form-title";
+                    title.textContent = tool.name;
+                    form.appendChild(title);
+
+                    if (tool.description) {
+                        const d = document.createElement("div");
+                        d.className = "param-desc";
+                        d.style.marginBottom = "10px";
+                        d.textContent = tool.description;
+                        form.appendChild(d);
+                    }
+
+                    const schema = tool.inputSchema || {};
+                    const properties = schema.properties || {};
+                    const required = schema.required || [];
+                    const fieldEls = {};
+                    const defaultUri = this._getDefaultUri(tool.name);
+
+                    for (const [propName, propDef] of Object.entries(properties)) {
+                        const field = document.createElement("div");
+                        field.className = "param-field";
+                        const isRequired = required.includes(propName);
+                        const isUri = propName === "uri";
+
+                        if (propDef.type === "boolean") {
+                            const wrap = document.createElement("div");
+                            wrap.className = "param-field-checkbox";
+                            const cb = document.createElement("input");
+                            cb.type = "checkbox";
+                            cb.id = "p-" + propName;
+                            const lbl = document.createElement("label");
+                            lbl.htmlFor = cb.id;
+                            lbl.innerHTML = escHtml(propName) + (isRequired ? ' <span class="required">*</span>' : "");
+                            wrap.appendChild(cb);
+                            wrap.appendChild(lbl);
+                            field.appendChild(wrap);
+                            fieldEls[propName] = { el: cb, type: "boolean" };
+                        } else if (propDef.type === "number" || propDef.type === "integer") {
+                            const lbl = document.createElement("label");
+                            lbl.innerHTML = escHtml(propName) + (isRequired ? ' <span class="required">*</span>' : "");
+                            field.appendChild(lbl);
+                            const input = document.createElement("input");
+                            input.type = "number";
+                            input.step = propDef.type === "integer" ? "1" : "any";
+                            if (propDef.default !== undefined) input.value = propDef.default;
+                            field.appendChild(input);
+                            fieldEls[propName] = { el: input, type: "number" };
+                        } else if (propDef.type === "object" || propDef.type === "array") {
+                            const lbl = document.createElement("label");
+                            lbl.innerHTML = escHtml(propName) + (isRequired ? ' <span class="required">*</span>' : "");
+                            field.appendChild(lbl);
+                            const ta = document.createElement("textarea");
+                            ta.placeholder = "JSON";
+                            if (propDef.default !== undefined) ta.value = JSON.stringify(propDef.default);
+                            field.appendChild(ta);
+                            fieldEls[propName] = { el: ta, type: "json" };
+                        } else {
+                            const lbl = document.createElement("label");
+                            lbl.innerHTML = escHtml(propName) + (isRequired ? ' <span class="required">*</span>' : "");
+                            field.appendChild(lbl);
+                            if (isUri && this._instanceUris.length > 0) {
+                                const sel = document.createElement("select");
+                                sel.style.cssText = "width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.72rem;padding:4px 8px;";
+                                for (const u of this._instanceUris) {
+                                    const o = document.createElement("option");
+                                    o.value = u;
+                                    o.textContent = u;
+                                    sel.appendChild(o);
+                                }
+                                sel.value = defaultUri;
+                                field.appendChild(sel);
+                                fieldEls[propName] = { el: sel, type: "string" };
+                            } else if (propDef.enum) {
+                                const sel = document.createElement("select");
+                                sel.style.cssText = "width:100%;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:0.72rem;padding:4px 8px;";
+                                for (const v of propDef.enum) {
+                                    const o = document.createElement("option");
+                                    o.value = v;
+                                    o.textContent = v;
+                                    sel.appendChild(o);
+                                }
+                                field.appendChild(sel);
+                                fieldEls[propName] = { el: sel, type: "string" };
+                            } else {
+                                const input = document.createElement("input");
+                                input.type = "text";
+                                if (isUri) input.value = defaultUri;
+                                else if (propDef.default !== undefined) input.value = propDef.default;
+                                field.appendChild(input);
+                                fieldEls[propName] = { el: input, type: "string" };
+                            }
+                        }
+
+                        if (propDef.description) {
+                            const d = document.createElement("div");
+                            d.className = "param-desc";
+                            d.textContent = propDef.description;
+                            field.appendChild(d);
+                        }
+
+                        form.appendChild(field);
+                    }
+
+                    const btnRow = document.createElement("div");
+                    btnRow.className = "btn-row";
+                    const execBtn = document.createElement("button");
+                    execBtn.textContent = "\u25b6 Execute";
+                    const spinner = document.createElement("div");
+                    spinner.className = "tool-spinner";
+                    execBtn.addEventListener("click", () => this._exec(tool.name, fieldEls, execBtn, spinner));
+                    btnRow.appendChild(execBtn);
+                    btnRow.appendChild(spinner);
+                    form.appendChild(btnRow);
+                    this._formContainer.appendChild(form);
+                }
+
+                async _exec(toolName, fieldEls, execBtn, spinner) {
+                    const args = {};
+                    for (const [name, { el, type }] of Object.entries(fieldEls)) {
+                        if (type === "boolean") args[name] = el.checked;
+                        else if (type === "number") { const v = el.value.trim(); if (v !== "") args[name] = parseFloat(v); }
+                        else if (type === "json") {
+                            const v = el.value.trim();
+                            if (v !== "") { try { args[name] = JSON.parse(v); } catch (e) { log(`Invalid JSON: ${e}`, "error"); return; } }
+                        } else { const v = el.value.trim(); if (v !== "") args[name] = v; }
+                    }
+
+                    execBtn.disabled = true;
+                    spinner.classList.add("visible");
+                    this._resultContainer.innerHTML = "";
+                    log(`Calling ${toolName}(${JSON.stringify(args)})`, "info");
+
+                    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+
+                    try {
+                        const result = await this._client.callTool(toolName, args);
+                        log(`${toolName} returned successfully`, "ok");
+
+                        const div = document.createElement("div");
+                        div.className = "tool-result";
+                        const textItems = result.content?.filter((c) => c.type === "text") || [];
+                        if (textItems.length > 0) {
+                            div.innerHTML = `<div class="tool-result-label">Result</div>`;
+                            for (const ti of textItems) {
+                                const pre = document.createElement("pre");
+                                try { pre.textContent = JSON.stringify(JSON.parse(ti.text), null, 2); }
+                                catch { pre.textContent = ti.text; }
+                                div.appendChild(pre);
+                            }
+                        } else {
+                            div.innerHTML = `<div class="tool-result-label">Result</div><pre>${escHtml(JSON.stringify(result, null, 2))}</pre>`;
+                        }
+                        this._resultContainer.appendChild(div);
+                    } catch (e) {
+                        log(`${toolName} failed: ${e}`, "error");
+                        const div = document.createElement("div");
+                        div.className = "tool-result error";
+                        div.innerHTML = `<div class="tool-result-label">Error</div><pre>${escHtml(String(e))}</pre>`;
+                        this._resultContainer.appendChild(div);
+                    } finally {
+                        spinner.classList.remove("visible");
+                        execBtn.disabled = false;
+                    }
+                }
+
+                show() { if (this._el) this._el.style.display = "flex"; }
+                hide() { if (this._el) this._el.style.display = "none"; }
+                destroy() { if (this._el) { this._el.remove(); this._el = null; } }
+            }
+
+            // =========================================================
+            // MCP wiring — shared grammar store + per-station servers
+            // =========================================================
+            const grammarStore = new McpGrammarStore();
+
+            async function initMcp() {
+                setStatus("connecting");
+                log("Initializing MCP servers for all stations\u2026", "dim");
+
+                for (const station of stations) {
+                    const [serverEnd, clientEnd] = LoopbackTransport.createPair();
+
+                    // Mesh adapter — scene-wide for this demo.
+                    // (In production, use a subclass or set accept before mesh creation
+                    // so that _initializeMeshIndex respects the filter.)
+                    const meshAdapter = new McpMeshAdapter(scene);
+                    const meshBehavior = new McpMeshBehavior(meshAdapter);
+
+                    // Camera adapter for this station's camera
+                    const camAdapter = new McpCameraAdapter(scene, station.camera);
+                    const camBehavior = new McpCameraBehavior(camAdapter);
+
+                    // Grammar behavior (shared store)
+                    const grammarBehavior = new McpGrammarBehavior(grammarStore);
+
+                    const server = new McpServerBuilder()
+                        .withName(station.name)
+                        .withTransport(serverEnd)
+                        .withGrammarStore(grammarStore)
+                        .withGrammarResolver(() => station.name)
+                        .withInitializer({
+                            initialize(_clientInfo, _caps) {
+                                return {
+                                    protocolVersion: "2024-11-05",
+                                    serverInfo: { name: station.name, version: "1.0.0" },
+                                    instructions:
+                                        `You are connected to ${station.label} on the assembly line. ` +
+                                        (station.commissioned
+                                            ? `This station is a ${station.role}. ${station.description}`
+                                            : "This station has not been commissioned yet."),
+                                };
+                            },
+                        })
+                        .register(meshBehavior, camBehavior, grammarBehavior)
+                        .build();
+
+                    const client = new McpClient({ name: "operator", version: "1.0.0" }, clientEnd);
+
+                    const serverPromise = server.start();
+                    await client.connect();
+                    await serverPromise;
+
+                    station.client = client;
+                    station.server = server;
+
+                    log(`${station.label}: MCP server ready (loopback)`, "ok");
+                }
+
+                setStatus("connected");
+                log("All stations online. Click 'Commission' to configure each station.", "ok");
+            }
+
+            // =========================================================
+            // Commissioning action
+            // =========================================================
+            async function commissionStation(station, role, description) {
+                const grammarData = {
+                    // ── Station identity ─────────────────────────────────
+                    // The _context entry is not a tool override — it carries
+                    // the device identity, role, and process context so any
+                    // LLM reading this grammar profile understands what this
+                    // station IS before it reads what individual tools DO.
+                    _context: {
+                        description: [
+                            `STATION: ${station.label} (${station.name})`,
+                            `ROLE: ${role}`,
+                            `PROCESS: ${description}`,
+                            `POSITION: Assembly line station ${stations.indexOf(station) + 1} of ${stations.length}.`,
+                        ].join("\n"),
+                    },
+
+                    // ── Tool overrides ───────────────────────────────────
+                    mesh_set_position: {
+                        description: `Moves the ${role} to a target position within the work cell.`,
+                        properties: {
+                            position: `Target position for the ${role} in cell-local coordinates (mm).`,
+                        },
+                    },
+                    mesh_set_enabled: {
+                        description: `Activates or deactivates the ${role}. When disabled, the machine is offline and invisible in the digital twin.`,
+                    },
+                    mesh_set_visibility: {
+                        description: `Controls the visual transparency of the ${role} in the digital twin (0 = invisible, 1 = fully opaque).`,
+                    },
+                    camera_set_position: {
+                        description: `Repositions the inspection camera monitoring the ${role} at ${station.label}.`,
+                    },
+                    camera_set_target: {
+                        description: `Points the inspection camera at a specific area of the ${role}.`,
+                    },
+                    camera_move_relative: {
+                        description: `Nudges the inspection camera relative to its current position for fine adjustment around the ${role}.`,
+                    },
+                };
+
+                log(`Commissioning ${station.label} as "${role}"\u2026`, "info");
+
+                await station.client.callTool("grammar_set", {
+                    uri: "mcp://grammar",
+                    profileId: station.name,
+                    data: grammarData,
+                });
+
+                station.commissioned = true;
+                station.role = role;
+                station.description = description;
+
+                log(`${station.label} commissioned as "${role}". Grammar profile saved.`, "ok");
+
+                // Update viewport label
+                const vpLabel = document.getElementById("vp-label-" + stations.indexOf(station));
+                if (vpLabel) vpLabel.textContent = `${station.label} \u2014 ${role}`;
+            }
+
+            // =========================================================
+            // Station card UI
+            // =========================================================
+            const stationListEl = document.getElementById("station-list");
+            const panelContainer = document.getElementById("tool-panel-container");
+
+            function buildStationCards() {
+                stationListEl.innerHTML = "";
+
+                for (const station of stations) {
+                    const card = document.createElement("div");
+                    card.className = "station-card";
+                    card.id = "card-" + station.name;
+
+                    const header = document.createElement("div");
+                    header.className = "station-card-header";
+                    header.innerHTML =
+                        `<span class="station-dot" style="background:${station.def.hexColor}"></span>` +
+                        `<span class="station-card-name">${escHtml(station.label)}</span>`;
+                    card.appendChild(header);
+
+                    const roleEl = document.createElement("div");
+                    roleEl.className = "station-card-role";
+                    roleEl.id = "role-" + station.name;
+                    roleEl.textContent = station.commissioned ? station.role : "";
+                    card.appendChild(roleEl);
+
+                    const statusEl = document.createElement("div");
+                    statusEl.className = "station-card-status" + (station.commissioned ? " commissioned" : "");
+                    statusEl.id = "status-" + station.name;
+                    statusEl.textContent = station.commissioned ? "Commissioned" : "Not commissioned";
+                    card.appendChild(statusEl);
+
+                    const btnRow = document.createElement("div");
+                    btnRow.className = "btn-row";
+
+                    const commBtn = document.createElement("button");
+                    commBtn.textContent = "\u2699 Commission";
+                    commBtn.addEventListener("click", () => showCommissionDialog(station));
+                    btnRow.appendChild(commBtn);
+
+                    const inspectBtn = document.createElement("button");
+                    inspectBtn.textContent = "\u{1f50d} Inspect Tools";
+                    inspectBtn.addEventListener("click", () => openToolPanel(station));
+                    btnRow.appendChild(inspectBtn);
+
+                    card.appendChild(btnRow);
+                    stationListEl.appendChild(card);
+                }
+            }
+
+            function updateStationCard(station) {
+                const roleEl = document.getElementById("role-" + station.name);
+                const statusEl = document.getElementById("status-" + station.name);
+                if (roleEl) roleEl.textContent = station.role;
+                if (statusEl) {
+                    statusEl.textContent = station.commissioned ? "Commissioned" : "Not commissioned";
+                    statusEl.className = "station-card-status" + (station.commissioned ? " commissioned" : "");
+                }
+            }
+
+            // =========================================================
+            // Commissioning dialog
+            // =========================================================
+            function showCommissionDialog(station) {
+                const overlay = document.createElement("div");
+                overlay.className = "commission-overlay";
+
+                const dialog = document.createElement("div");
+                dialog.className = "commission-dialog";
+
+                dialog.innerHTML =
+                    `<h2>\u2699 Commission ${escHtml(station.label)}</h2>` +
+                    `<div class="field">` +
+                    `  <label>Station</label>` +
+                    `  <input type="text" value="${escHtml(station.label)}" readonly style="color:var(--muted)" />` +
+                    `</div>` +
+                    `<div class="field">` +
+                    `  <label>Machine Role</label>` +
+                    `  <input type="text" id="comm-role" placeholder="e.g. resistance spot welder" value="${escHtml(station.def.defaultRole)}" />` +
+                    `</div>` +
+                    `<div class="field">` +
+                    `  <label>Process Description</label>` +
+                    `  <textarea id="comm-desc" placeholder="Describe what this machine does in the process\u2026">${escHtml(station.def.defaultDesc)}</textarea>` +
+                    `</div>` +
+                    `<div class="btn-row">` +
+                    `  <button id="comm-cancel">Cancel</button>` +
+                    `  <button id="comm-apply">\u2713 Apply</button>` +
+                    `</div>`;
+
+                overlay.appendChild(dialog);
+                document.body.appendChild(overlay);
+                pushModal();
+
+                function closeDialog() { overlay.remove(); popModal(); }
+
+                document.getElementById("comm-cancel").addEventListener("click", closeDialog);
+
+                overlay.addEventListener("click", (e) => {
+                    if (e.target === overlay) closeDialog();
+                });
+
+                document.getElementById("comm-apply").addEventListener("click", async () => {
+                    const role = document.getElementById("comm-role").value.trim();
+                    const desc = document.getElementById("comm-desc").value.trim();
+                    if (!role) { alert("Please enter a machine role."); return; }
+
+                    closeDialog();
+                    await commissionStation(station, role, desc);
+                    updateStationCard(station);
+                });
+            }
+
+            // =========================================================
+            // Tool panel (inspect tools with live grammar)
+            // =========================================================
+            function openToolPanel(station) {
+                // Close any existing panel for any station
+                for (const s of stations) {
+                    if (s.toolPanel) {
+                        s.toolPanel.destroy();
+                        s.toolPanel = null;
+                        popModal();
+                    }
+                }
+
+                if (!station.client) {
+                    log(`${station.label}: MCP client not ready`, "warn");
+                    return;
+                }
+
+                pushModal();
+                const panel = new McpToolPanel(station.client, panelContainer, {
+                    serverName: station.label + (station.commissioned ? ` (${station.role})` : ""),
+                    onClose: () => {
+                        panel.destroy();
+                        if (station.toolPanel === panel) station.toolPanel = null;
+                        popModal();
+                    },
+                });
+                station.toolPanel = panel;
+                panel.initialize().catch((e) => {
+                    log(`Tool panel init failed for ${station.label}: ${e}`, "error");
+                    panel.destroy();
+                    if (station.toolPanel === panel) station.toolPanel = null;
+                    popModal();
+                });
+            }
+
+            // =========================================================
+            // Boot
+            // =========================================================
+            log("Building stations\u2026", "dim");
+            engine.runRenderLoop(() => scene.render());
+
+            buildAllStations()
+                .then(() => {
+                    log(`${stations.length} stations built.`, "ok");
+                    buildStationCards();
+                    return initMcp();
+                })
+                .then(() => log("Ready. Commission each station to see grammar-adapted tool descriptions.", "ok"))
+                .catch((err) => {
+                    log(`Init failed: ${err}`, "error");
+                    setStatus("disconnected");
+                });
+        </script>
+    </body>
+</html>

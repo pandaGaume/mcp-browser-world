@@ -10,7 +10,9 @@ import type {
     McpServerCapabilities,
     McpTool,
 } from "../interfaces";
+import type { Unsubscribe } from "../interfaces/eventSource";
 import { McpGrammar } from "../mcp.grammar";
+import type { McpGrammarStore, McpGrammarStoreChangeEvent } from "../mcp.grammarStore";
 import { DirectTransport } from "./direct.transport";
 import { MultiplexTransport } from "./multiplex.transport";
 import { Mcp } from "./jsonrpc.helpers";
@@ -85,6 +87,17 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
      */
     private _sessionGrammar: McpGrammar | undefined;
 
+    /** Tracks the grammar key resolved for the current session so the store change handler can check relevance. */
+    private _currentGrammarKey: string | undefined;
+
+    // ── Grammar Store ────────────────────────────────────────────────────────
+
+    /** Optional shared grammar store for runtime grammar mutations. */
+    private readonly _grammarStore: McpGrammarStore | undefined;
+
+    /** Unsubscribe handle for the grammar store change listener. */
+    private _storeUnsubscribe: Unsubscribe | undefined;
+
     constructor(
         name: string,
         wsUrl: string,
@@ -94,6 +107,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         grammars?: Map<string, McpGrammar>,
         grammarResolver?: McpGrammarResolver,
         transport?: IMessageTransport,
+        grammarStore?: McpGrammarStore,
     ) {
         this._name = name;
         this._wsUrl = wsUrl;
@@ -104,6 +118,15 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._grammars = grammars ?? new Map();
         this._grammarResolver = grammarResolver;
         this._externalTransport = transport;
+        this._grammarStore = grammarStore;
+
+        // Subscribe to grammar store changes so the session grammar can be
+        // re-merged and clients notified when a profile is updated at runtime.
+        if (this._grammarStore) {
+            this._storeUnsubscribe = this._grammarStore.onChanged.subscribe((event: McpGrammarStoreChangeEvent) => {
+                this._onGrammarStoreChanged(event);
+            });
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -145,6 +168,8 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     async stop(): Promise<void> {
         this._stopped = true;
         this._clearIdleTimer();
+        this._storeUnsubscribe?.();
+        this._storeUnsubscribe = undefined;
         this._transport?.close();
         this._transport = null;
         this._isRunning = false;
@@ -201,9 +226,13 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
             ? this._initializer.initialize(clientInfo, params?.capabilities ?? {})
             : { protocolVersion: "2024-11-05", serverInfo: { name: this._name, version: "0.0.0" } };
 
-        // Resolve the session grammar from the grammar map.
+        // Resolve the session grammar by merging static (builder) and store grammars.
+        // Store grammars take priority over static ones (later layers win in merge).
         const grammarKey = this._grammarResolver?.(clientInfo);
-        this._sessionGrammar = grammarKey ? this._grammars.get(grammarKey) : undefined;
+        this._currentGrammarKey = grammarKey;
+        const staticGrammar = grammarKey ? this._grammars.get(grammarKey) : undefined;
+        const storeGrammar = grammarKey ? this._grammarStore?.get(grammarKey) : undefined;
+        this._sessionGrammar = staticGrammar || storeGrammar ? McpGrammar.merge(staticGrammar, storeGrammar) : undefined;
 
         const result: McpInitializeResult = { ...identity, capabilities: this._deriveCapabilities() };
 
@@ -434,6 +463,7 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
         this._transport = null;
         this._sessionReady = false; // handshake must be repeated on reconnection
         this._sessionGrammar = undefined; // grammar must be re-resolved on reconnection
+        this._currentGrammarKey = undefined;
         this._clearIdleTimer();
 
         if (!this._stopped) {
@@ -571,6 +601,30 @@ export class McpServer implements IMcpServer, IMcpServerHandlers {
     private _notifyResourcesListChanged(): void {
         if (!this._sessionReady) return;
         this._sendNotification(Mcp.resourcesListChanged());
+    }
+
+    /**
+     * Sends a `notifications/tools/list_changed` notification to the client.
+     * Only fires when the session is fully initialized and the WebSocket is open.
+     */
+    private _notifyToolsListChanged(): void {
+        if (!this._sessionReady) return;
+        this._sendNotification(Mcp.toolsListChanged());
+    }
+
+    /**
+     * Reacts to a grammar store mutation.  If the changed profile is the one
+     * currently active for this session, re-merges the session grammar and
+     * notifies the client so it can re-fetch `tools/list`.
+     */
+    private _onGrammarStoreChanged(event: McpGrammarStoreChangeEvent): void {
+        if (!this._currentGrammarKey || event.profileId !== this._currentGrammarKey) return;
+
+        const staticGrammar = this._grammars.get(this._currentGrammarKey);
+        const storeGrammar = this._grammarStore?.get(this._currentGrammarKey);
+        this._sessionGrammar = staticGrammar || storeGrammar ? McpGrammar.merge(staticGrammar, storeGrammar) : undefined;
+
+        this._notifyToolsListChanged();
     }
 
     /**

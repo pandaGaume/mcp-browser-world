@@ -1,5 +1,6 @@
 import type { IMessageTransport, IMcpBehavior, IMcpInitializer, IMcpServer, IMcpServerBuilder, IMcpServerHandlers, IMcpServerOptions, McpGrammarResolver } from "../interfaces";
 import { McpGrammar } from "../mcp.grammar";
+import type { McpGrammarStore } from "../mcp.grammarStore";
 import { McpServer } from "./mcp.server";
 
 /**
@@ -30,6 +31,7 @@ export class McpServerBuilder implements IMcpServerBuilder {
     private _options: IMcpServerOptions = {};
     private _grammars = new Map<string, McpGrammar>();
     private _grammarResolver: McpGrammarResolver | undefined;
+    private _grammarStore: McpGrammarStore | undefined;
     private _transport: IMessageTransport | undefined;
 
     /** Sets the human-readable name reported in `initialize` responses. */
@@ -106,6 +108,19 @@ export class McpServerBuilder implements IMcpServerBuilder {
     }
 
     /**
+     * Provides a shared grammar store for runtime grammar mutations.
+     *
+     * When set, the server merges store grammars with static grammars registered
+     * via {@link withGrammar} (store grammars take priority). The server also
+     * subscribes to store change events so it can re-merge the session grammar
+     * and emit `notifications/tools/list_changed` when a profile is updated.
+     */
+    withGrammarStore(store: McpGrammarStore): this {
+        this._grammarStore = store;
+        return this;
+    }
+
+    /**
      * Provides an external transport instead of the default {@link DirectTransport}.
      * When set, `withWsUrl()` is no longer required — the transport manages its
      * own connection lifecycle.
@@ -131,7 +146,7 @@ export class McpServerBuilder implements IMcpServerBuilder {
     build(): IMcpServer {
         if (!this._wsUrl && !this._transport) throw new Error("McpServerBuilder: withWsUrl() or withTransport() is required before build()");
 
-        const server = new McpServer(this._name, this._wsUrl, this._options, this._initializer, this._handlers, this._grammars, this._grammarResolver, this._transport);
+        const server = new McpServer(this._name, this._wsUrl, this._options, this._initializer, this._handlers, this._grammars, this._grammarResolver, this._transport, this._grammarStore);
 
         for (const behavior of this._behaviors) {
             server.register(behavior);

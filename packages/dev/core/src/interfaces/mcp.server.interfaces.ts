@@ -2,6 +2,7 @@ import type { IMcpServerHandlers, McpClientCapabilities, McpClientInfo, McpServe
 import type { IMcpBehavior } from "./mcp.behavior.interfaces";
 import type { IMessageTransport } from "./mcp.transport.interfaces";
 import type { McpGrammar } from "../mcp.grammar";
+import type { McpGrammarStore } from "../mcp.grammarStore";
 
 /**
  * Maps {@link McpClientInfo} to a grammar key from the server's grammar map.
@@ -129,6 +130,13 @@ export interface IMcpServerBuilder {
      * The returned key is looked up in the grammars registered via {@link withGrammar}.
      */
     withGrammarResolver(resolver: McpGrammarResolver): IMcpServerBuilder;
+
+    /**
+     * Provides a shared grammar store for runtime grammar mutations.
+     * When set, store grammars are merged with static grammars (store wins).
+     * The server subscribes to store changes and emits `notifications/tools/list_changed`.
+     */
+    withGrammarStore(store: McpGrammarStore): IMcpServerBuilder;
 
     /**
      * Provides an external transport (e.g. {@link MultiplexTransport}) instead
